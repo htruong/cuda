@@ -39,8 +39,7 @@ void host_matmul(float *a, float *b, float *c, uint m, uint n, uint k) {
     // Go column by column
     for (uint j = 0; j < k; j++) {
       // Go through the cells of each dest matrix
-      c[i * k + j] = 0;
-      for (uint t = 1; t < n; t++) {
+      for (uint t = 0; t < n; t++) {
 	// c (i, j) += a(i, t) * b(t, j)
 	c[i * k + j] += a[i * n + t] * b[t * k + j];
       }
@@ -113,6 +112,12 @@ void init_matrix(float *matrix, uint size) {
   }
 }
 
+void clear_matrix(float *matrix, uint size) {
+  for (uint i = 0; i < size; i++) {
+    matrix[i] = 0.0;
+  }
+}
+
 
 void verify_matrix(const float *matrix1, const float *matrix2, const uint size) {
   for (uint i = 0; i < size; i++) {
@@ -152,19 +157,21 @@ int main() {
   print_matrix(c_matrix, m*k);
   
   
-  printf("Asserting that host-calculation is correct:\n");
+  printf("Asserting that host-calculation is correct: ");
   assert(c_matrix[0] == 0);
-  assert(c_matrix[1] == -8);
+  assert(c_matrix[1] == -5);
   assert(c_matrix[2] == -6);
   assert(c_matrix[3] == -7);
-  
+  printf("It is.\n");
   ////////////////////////////////////////////////
   
-  printf("Intialize a random matrix:\n");
+  printf("Intialize random matrices: ");
   init_matrix(a_matrix, m*n);
   init_matrix(b_matrix, n*k);
+  printf("Done. \n");
   ///////////////////////////////////////////////
   printf("Do host-calculation:\n");
+  clear_matrix(c_matrix, m*k);
   host_matmul(a_matrix, b_matrix, c_matrix, m, n, k);
   printf("Here comes the first 25 elements of c:\n");
   print_matrix(c_matrix, m*k);
@@ -172,6 +179,7 @@ int main() {
   dev_matmul(a_matrix, b_matrix, c_dev_matrix, m, n, k);
   printf("Here comes the first 25 elements of c on device:\n");
   print_matrix(c_dev_matrix, m*k);
-  
-  
+  printf("Checking if GPU result is correct: ");
+  verify_matrix(c_matrix, c_dev_matrix, m*k);
+  printf("Should be.");
 }
