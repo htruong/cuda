@@ -49,6 +49,8 @@ void host_matmul(float *a, float *b, float *c, uint m, uint n, uint k) {
 
 __global__ void kernel_mathmul(float * a, float * b, float * c, uint k, uint n)
 {
+	// This don't work yet when the columns count of the first matrix is > 256 or whatever
+	// but we don't care at this point.
     uint i = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i < k) {
@@ -72,7 +74,7 @@ __global__ void kernel_mathmul(float * a, float * b, float * c, uint k, uint n)
 
 void dev_matmul(float *a, float *b, float *c, uint m, uint n, uint k) {
     int threads_per_block = 256;
-    int blocks = m / threads_per_block + 1;
+    int blocks =  ceil(m / threads_per_block);
     
     float * dev_a_onerow;
     cudaMalloc(&dev_a_onerow, n*sizeof(float));
@@ -100,7 +102,7 @@ void dev_matmul(float *a, float *b, float *c, uint m, uint n, uint k) {
       print_matrix(c, m*k);
     }
     
-    // Who cares about freeing memory right?
+    // Prototype code, Who cares about freeing memory right?
     
     
 }
