@@ -4,6 +4,7 @@
 #include <math.h>
 #include <assert.h>
 
+
 // CUDA runtime
 #include <cuda_runtime.h>
 
@@ -49,12 +50,12 @@ void host_matmul(float *a, float *b, float *c, uint m, uint n, uint k) {
 
 __global__ void kernel_mathmul(float * a, float * b, float * c, uint k, uint n)
 {
-	// This don't work yet when the columns count of the first matrix is > 256 or whatever
-	// but we don't care at this point.
+	// This does not work yet when the columns count of the first matrix is > 256 or whatever...
     uint i = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i < k) {
-	  printf("[%d] ", i);
+      /*
+      printf("[%d] ", i);
 
 	  if (i == 0) {
 		  printf("a now is: ");
@@ -63,21 +64,23 @@ __global__ void kernel_mathmul(float * a, float * b, float * c, uint k, uint n)
 	  	  }
 	  	  printf("\n");
 	  }
-
+	  */
       c[i] = 0; // reset it first, remember it doesn't get cleared everytime
       
       for (uint t=0; t<n; t++) {
     	  	  c[i] += a[t] * b[i + t*k];
       }
     }
+
 }
 
 void dev_matmul(float *a, float *b, float *c, uint m, uint n, uint k) {
     int threads_per_block = 256;
-    int blocks =  ceil(m / threads_per_block);
+    int blocks =  ceil((float)(m) / threads_per_block);
+    // printf("Number of blocks: [%d]\n", blocks);
     
     float * dev_a_onerow;
-    cudaMalloc(&dev_a_onerow, n*sizeof(float));
+	cudaMalloc(&dev_a_onerow, n*sizeof(float));
     
     float * dev_c_onerow;
     cudaMalloc(&dev_c_onerow, k*sizeof(float));
@@ -89,22 +92,22 @@ void dev_matmul(float *a, float *b, float *c, uint m, uint n, uint k) {
     
     // Compute the rows of resulting matrix one line by one line.
     for (uint i = 0; i < m; i++) {
-      
       // copy one row of the a matrix to the device
-      cudaMemcpy(dev_a_onerow, a + i * n * sizeof(float), n * sizeof(float), cudaMemcpyHostToDevice);
-      
-      printf("Calling kernel mathmul\n");
-      kernel_mathmul <<<blocks,threads_per_block>>> (dev_a_onerow, dev_b, dev_c_onerow, k, n);
-      
-      // copy the resulting row back
-      cudaMemcpy(c + i * k * sizeof(float), dev_c_onerow, k * sizeof(float), cudaMemcpyDeviceToHost);
+      cudaMemcpy(dev_a_onerow, a + (i * n), n * sizeof(float), cudaMemcpyHostToDevice);
 
-      print_matrix(c, m*k);
+      //printf("Calling kernel mathmul\n");
+      kernel_mathmul <<<blocks,threads_per_block>>> (dev_a_onerow, dev_b, dev_c_onerow, k, n);
+      cudaThreadSynchronize();
+
+      // copy the resulting row back
+      cudaMemcpy(c + i * k, dev_c_onerow, k * sizeof(float), cudaMemcpyDeviceToHost);
+
+      //print_matrix(c, m*k);
     }
     
-    // Prototype code, Who cares about freeing memory right?
-    
-    
+    cudaFree(dev_a_onerow);
+    cudaFree(dev_b);
+    cudaFree(dev_c_onerow);
 }
 
 void init_matrix(float *matrix, uint size) {
@@ -130,9 +133,9 @@ void verify_matrix(const float *matrix1, const float *matrix2, const uint size) 
 
 
 int main() {
-  uint m = 2;
-  uint n = 3;
-  uint k = 2;
+  uint m = 200;
+  uint n = 200;
+  uint k = 200;
   
   srand( time (NULL) );
   
@@ -140,7 +143,10 @@ int main() {
   float * b_matrix = new float[n*k];
   float * c_matrix = new float[m*k];
   float * c_dev_matrix = new float[m*k];
-  
+
+  clock_t start;
+  clock_t end;
+  /*
   printf("Initializing matrices with sample numbers\n", 2, 2);
   a_matrix[0] = 1; a_matrix[2] = -2; a_matrix[4] = 3; a_matrix[5] = -1;
   b_matrix[1] = 3; b_matrix[2] = -2; b_matrix[3] = -1; b_matrix[5] = 4;
@@ -158,7 +164,6 @@ int main() {
   print_matrix(b_matrix, n*k);
   print_matrix(c_matrix, m*k);
   
-  
   printf("Asserting that host-calculation is correct: ");
   assert(c_matrix[0] == 0);
   assert(c_matrix[1] == -5);
@@ -166,22 +171,40 @@ int main() {
   assert(c_matrix[3] == -7);
   printf("It is.\n");
   ////////////////////////////////////////////////
-  
+  */
   printf("Intialize random matrices: ");
   init_matrix(a_matrix, m*n);
   init_matrix(b_matrix, n*k);
   printf("Done. \n");
+  print_matrix(a_matrix, m*n);
+  print_matrix(b_matrix, n*k);
+  print_matrix(c_matrix, m*k);
   ///////////////////////////////////////////////
-  printf("Do host-calculation:\n");
+
+  printf("Do host-calculation: ");
   clear_matrix(c_matrix, m*k);
+  start = clock();
   host_matmul(a_matrix, b_matrix, c_matrix, m, n, k);
+  end = clock();
+  printf("Took %d clock cycles\n", end - start);
+
   printf("Here comes the first 25 elements of c:\n");
   print_matrix(c_matrix, m*k);
-  printf("Do device-calculation:\n");
+
+  printf("Do device-calculation: ");
+  start = clock();
   dev_matmul(a_matrix, b_matrix, c_dev_matrix, m, n, k);
+  end = clock();
+  printf("Took %d clock cycles\n", end - start);
+
   printf("Here comes the first 25 elements of c on device:\n");
   print_matrix(c_dev_matrix, m*k);
   printf("Checking if GPU result is correct: ");
   verify_matrix(c_matrix, c_dev_matrix, m*k);
-  printf("Should be.");
+  printf("It is.");
+
+  delete a_matrix;
+  delete b_matrix;
+  delete c_matrix;
+  delete c_dev_matrix;
 }
