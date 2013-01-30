@@ -182,12 +182,6 @@ void runTest( int argc, char** argv)
     //fprintf(stdout,"Memcpy to device,%lf\n",end_time-time);
     //time = end_time;
 
-    // the threads in block should equal to the STRIDE_SIZE
-    /*	needleman_cuda_dynamic<<<14, 128>>>(d_sequence_set1, d_sequence_set2,
-    									   d_pos1, d_pos2,
-    									   d_score_matrix, d_pos_matrix,
-    									   pair_num, penalty);
-    */
     needleman_cuda_diagonal<<<pair_num,512>>>(d_sequence_set1, d_sequence_set2,
             d_pos1, d_pos2,
             d_score_matrix, d_pos_matrix,
