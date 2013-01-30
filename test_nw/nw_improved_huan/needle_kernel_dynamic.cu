@@ -5,6 +5,7 @@
 #define STRIDE_SIZE 128		// equal to the number of thread per block
 #define PAIR_IN_BLOCK 32
 
+
 __global__ void needleman_cuda_dynamic(char *sequence_set1, char *sequence_set2,
                                        unsigned int *pos1, unsigned int *pos2,
                                        short *score_matrix, unsigned int *pos_matrix,
@@ -70,7 +71,7 @@ __global__ void needleman_cuda_dynamic(char *sequence_set1, char *sequence_set2,
 					// Fix here for traceback
                     for (k=0; k<STRIDE_SIZE; ++k) {
                         pl2[1+k] = maximum(
-							pl2[k]+penalty,		
+							pl2[k]+penalty,
                             pl1[1+k]+penalty,
                             pl1[k]+blosum62[seq2_ch][s_seq1[tid][k+1]]);
                     }

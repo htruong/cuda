@@ -13,7 +13,7 @@
 
 // includes, kernels
 #include "needle_cpu.c"
-#include "needle_kernel_dynamic.cu"
+//#include "needle_kernel_dynamic.cu"
 #include "needle_kernel_diagonal.cu"
 
 inline void cudaCheckError(int line, cudaError_t ce)
@@ -76,7 +76,9 @@ void runTest( int argc, char** argv)
     char sequence_set1[MAX_SEQ_LEN*MAX_SEQ_NUM] = {0}, sequence_set2[MAX_SEQ_LEN*MAX_SEQ_NUM] = {0};
     unsigned int pos1[MAX_SEQ_NUM] = {0}, pos2[MAX_SEQ_NUM] = {0}, pos_matrix[MAX_SEQ_NUM] = {0};
     int *score_matrix;
+    int *trace_matrix;
     int *score_matrix_cpu;
+    int *trace_matrix_cpu;
     char *d_sequence_set1, *d_sequence_set2;
     unsigned int *d_pos1, *d_pos2, *d_pos_matrix;
     int *d_score_matrix;
@@ -87,7 +89,7 @@ void runTest( int argc, char** argv)
         pair_num = atoi(argv[1]);
         penalty = atoi(argv[2]);
         if (pair_num>MAX_SEQ_NUM) {
-            fprintf(stderr, "\t<pair number>  - times of comparison should be less than %d\n",MAX_SEQ_NUM);
+            fprintf(stderr, "\t<number of pairs>  - number of pairs, must be less than %d\n",MAX_SEQ_NUM);
             exit(1);
         }
     }
@@ -124,8 +126,21 @@ void runTest( int argc, char** argv)
         pos_matrix[i+1] = pos_matrix[i] + (seq1_len+1) * (seq2_len+1);
     }
     score_matrix = (int *)malloc( pos_matrix[pair_num]*sizeof(int));
-    score_matrix_cpu = (int *)malloc( pos_matrix[pair_num]*sizeof(int));
-    printf ("Allocating %dMB of memory... (sizeof int=%d bytes)", pos_matrix[pair_num]*sizeof(int)/1024/1024, sizeof(int));
+    
+    score_matrix_cpu = (int *)malloc( pos_matrix[pair_num]*sizeof(int));	
+    
+	#ifdef _LP64
+	printf ("Running on a 64-bit platform!\n");
+	#else
+	#endif
+    
+    printf ("Allocating %dMB of memory... \
+		(sizeof int=%d bytes, sizeof short=%d bytes)\n",
+		pos_matrix[pair_num]*sizeof(int)/1024/1024,
+		sizeof(int),
+		sizeof(short)
+	);
+	
     needleman_cpu(sequence_set1, sequence_set2, pos1, pos2, score_matrix_cpu, pos_matrix, pair_num, penalty);
 
     // printf("Start Needleman-Wunsch\n");
@@ -143,11 +158,25 @@ void runTest( int argc, char** argv)
     time = end_time;
 
     // Memcpy to device
-    cudaCheckError( __LINE__, cudaMemcpy( d_sequence_set1, sequence_set1, sizeof(char)*pos1[pair_num], cudaMemcpyHostToDevice ) );
-    cudaCheckError( __LINE__, cudaMemcpy( d_sequence_set2, sequence_set2, sizeof(char)*pos2[pair_num], cudaMemcpyHostToDevice ) );
-    cudaCheckError( __LINE__, cudaMemcpy( d_pos1, pos1, sizeof(unsigned int)*(pair_num+1), cudaMemcpyHostToDevice ) );
-    cudaCheckError( __LINE__, cudaMemcpy( d_pos2, pos2, sizeof(unsigned int)*(pair_num+1), cudaMemcpyHostToDevice ) );
-    cudaCheckError( __LINE__, cudaMemcpy( d_pos_matrix, pos_matrix, sizeof(unsigned int)*(pair_num+1), cudaMemcpyHostToDevice ) );
+    cudaCheckError( __LINE__,
+		cudaMemcpy( d_sequence_set1, sequence_set1, sizeof(char)*pos1[pair_num], cudaMemcpyHostToDevice )
+	);
+	
+    cudaCheckError( __LINE__,
+		cudaMemcpy( d_sequence_set2, sequence_set2, sizeof(char)*pos2[pair_num], cudaMemcpyHostToDevice )
+	);
+	
+    cudaCheckError( __LINE__,
+		cudaMemcpy( d_pos1, pos1, sizeof(unsigned int)*(pair_num+1), cudaMemcpyHostToDevice )
+	);
+	
+    cudaCheckError( __LINE__,
+		cudaMemcpy( d_pos2, pos2, sizeof(unsigned int)*(pair_num+1), cudaMemcpyHostToDevice )
+	);
+	
+    cudaCheckError( __LINE__,
+		cudaMemcpy( d_pos_matrix, pos_matrix, sizeof(unsigned int)*(pair_num+1), cudaMemcpyHostToDevice )
+	);
 
     //end_time = gettime();
     //fprintf(stdout,"Memcpy to device,%lf\n",end_time-time);
@@ -180,66 +209,11 @@ void runTest( int argc, char** argv)
     else
         printf("Validation: FAIL\n");
 
-#ifdef TRACEBACK
-    for (int i = max_rows - 2,  j = max_rows - 2; i>=0, j>=0;) {
-        int nw, n, w, traceback;
-        if ( i == max_rows - 2 && j == max_rows - 2 )
-            //fprintf(fpo, "%d ", output_itemsets[ i * max_cols + j]); //print the first element
-            if ( i == 0 && j == 0 )
-                break;
-        if ( i > 0 && j > 0 ) {
-            nw = output_itemsets[(i - 1) * max_cols + j - 1];
-            w  = output_itemsets[ i * max_cols + j - 1 ];
-            n  = output_itemsets[(i - 1) * max_cols + j];
-        }
-        else if ( i == 0 ) {
-            nw = n = LIMIT;
-            w  = output_itemsets[ i * max_cols + j - 1 ];
-        }
-        else if ( j == 0 ) {
-            nw = w = LIMIT;
-            n  = output_itemsets[(i - 1) * max_cols + j];
-        }
-        else {
-        }
+	#ifdef TRACEBACK
 
-        //traceback = maximum(nw, w, n);
-        int new_nw, new_w, new_n;
-        new_nw = nw + referrence[i * max_cols + j];
-        new_w = w - penalty;
-        new_n = n - penalty;
-
-        traceback = maximum(new_nw, new_w, new_n);
-        if(traceback == new_nw)
-            traceback = nw;
-        if(traceback == new_w)
-            traceback = w;
-        if(traceback == new_n)
-            traceback = n;
-
-        //fprintf(fpo, "%d ", traceback);
-
-        if(traceback == nw )
-        {
-            i--;
-            j--;
-            continue;
-        }
-
-        else if(traceback == w )
-        {
-            j--;
-            continue;
-        }
-
-        else if(traceback == n )
-        {
-            i--;
-            continue;
-        };
-    }
-#endif
-//	fclose(fpo);
+	#endif
+	
+	//	fclose(fpo);
     cudaFree(d_sequence_set1);
     cudaFree(d_sequence_set2);
     cudaFree(d_pos1);
