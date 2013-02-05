@@ -28,6 +28,7 @@ char blosum62_cpu[24][24] = {
 {-4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4,  1}
 };
 
+
 void needleman_cpu(char *sequence_set1, 
 				   char *sequence_set2, 
 				   unsigned int *pos1, 

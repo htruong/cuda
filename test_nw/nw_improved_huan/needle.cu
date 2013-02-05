@@ -11,6 +11,9 @@
 #include "needle.h"
 #include "needle_cpu.h"
 
+
+#define LENGTH 20
+#define TRACEBACK
 // includes, kernels
 #include "needle_cpu.c"
 //#include "needle_kernel_dynamic.cu"
@@ -28,12 +31,12 @@ int validation(int *score_matrix_cpu, int *score_matrix, unsigned int length)
 {
     unsigned int i = 0;
     while (i!=length) {
-        if ( score_matrix_cpu[i]==score_matrix[i] ) {
+        if ( (score_matrix_cpu[i]) == (score_matrix[i] >> 2) ) {
             ++i;
             continue;
         }
         else {
-            printf("i = %d\n",i);
+            printf("i = %d, expected %d, got %d.\n",i, score_matrix_cpu[i], score_matrix[i] >> 2);
             return 0;
         }
     }
@@ -111,16 +114,16 @@ void runTest( int argc, char** argv)
     pos_matrix[0] = pos1[0] = pos2[0] = 0;
     for (int i=0; i<pair_num; ++i) {
         //please define your own sequence 1
-        seq1_len = 2048; //64+rand() % 20;
+        seq1_len = LENGTH; //64+rand() % 20;
         //printf("Seq1 length: %d\n", seq1_len);
         for (int j=0; j<seq1_len; ++j)
-            sequence_set1[ pos1[i] + j ] = rand() % 20 + 1;
+            sequence_set1[ pos1[i] + j ] = 'A'; //rand() % 20 + 'A';
         pos1[i+1] = pos1[i] + seq1_len;
         //please define your own sequence 2.
-        seq2_len = 2048;//64+rand() % 20;
+        seq2_len = LENGTH;//64+rand() % 20;
         //printf("Seq2 length: %d\n\n", seq2_len);
         for (int j=0; j<seq2_len; ++j)
-            sequence_set2[ pos2[i] +j ] = rand() % 20 + 1;
+            sequence_set2[ pos2[i] +j ] = 'A'; //rand() % 20 + 'A';
         pos2[i+1] = pos2[i] + seq2_len;
         //printf("Matrix size increase: %d\n", (seq1_len+1) * (seq2_len+1));
         pos_matrix[i+1] = pos_matrix[i] + (seq1_len+1) * (seq2_len+1);
@@ -133,6 +136,12 @@ void runTest( int argc, char** argv)
 	printf ("Running on a 64-bit platform!\n");
 	#else
 	#endif
+
+	/*
+	short M = -1;
+	printf("M: "BYTETOBINARYPATTERN" "BYTETOBINARYPATTERN"\n",
+		BYTETOBINARY(M>>8), BYTETOBINARY(M));
+    */
     
     printf ("Allocating %dMB of memory... \
 		(sizeof int=%d bytes, sizeof short=%d bytes)\n",
@@ -204,7 +213,66 @@ void runTest( int argc, char** argv)
         printf("Validation: FAIL\n");
 
 	#ifdef TRACEBACK
+		printf("Here comes the result of the first pair...\n");
+		int seq1_begin = pos1[0];
+		int seq1_end = pos1[1];
+		int seq2_begin = pos2[0];
+		int seq2_end = pos2[1];
+		int *current_matrix = score_matrix + pos_matrix[0];
+		printf("1st seq len = %d =\n%.*s\n", seq1_end - seq1_begin, seq1_end - seq1_begin, sequence_set1 + seq1_begin);
+		printf("2nd seq len = %d =\n%.*s\n", seq2_end - seq2_begin, seq2_end - seq2_begin, sequence_set2 + seq2_begin);
+		printf("traceback = \n");
+		bool done = false;
+		int current_pos = (seq1_end - seq1_begin) * (seq2_end - seq2_begin); // start at the last cell of the matrix
 
+		for (int i = 0; i < LENGTH; i++) {
+			for (int j = 0; j < LENGTH; j++) {
+				int dir = current_matrix[i*LENGTH+j];
+				if ((dir & 0x03) == TRACE_UL) {
+					printf("x");
+					current_pos = current_pos - (seq1_end - seq1_begin) - 1;
+				} else if ((dir & 0x03) == TRACE_U) {
+					printf("u");
+					current_pos = current_pos - (seq1_end - seq1_begin);
+				} else if ((dir & 0x03) == TRACE_L) {
+					printf("l");
+					current_pos = current_pos - 1;
+				} else {
+					printf("-");
+				}
+			}
+			printf("\n");
+		}
+
+
+		for (int i = 0; i < LENGTH; i++) {
+			for (int j = 0; j < LENGTH; j++) {
+				int dir = current_matrix[i*LENGTH+j] >> 2;
+				printf("%4d ", dir);
+			}
+			printf("\n");
+		}
+		
+		printf("Actual traceback:\n");
+		while (!done) {
+			int dir = current_matrix[current_pos];
+			//printf("pos_matrix_next = %d, pos_matrix_cur = %d, current_pos = %d, dir = %x, trace_ul = %x", pos_matrix[1], pos_matrix[0], current_pos, dir, TRACE_UL);
+			
+			if ((dir & 0x03) == TRACE_UL) {
+				printf("x");
+				current_pos = current_pos - (seq1_end - seq1_begin) - 1;
+			} else if ((dir & 0x03) == TRACE_U) {
+				printf("u");
+				current_pos = current_pos - (seq1_end - seq1_begin);
+			} else if ((dir & 0x03) == TRACE_L) {
+				printf("l");
+				current_pos = current_pos - 1;
+			} else {
+				printf("seems to have reached the origin...");
+				done = true;
+			}
+		}
+		printf("traceback done!\n");
 	#endif
 	
 	//	fclose(fpo);

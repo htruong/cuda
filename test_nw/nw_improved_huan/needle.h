@@ -6,6 +6,26 @@
 #else
 #endif
 
+
+//////////////////
+#define TRACE_U 1 // 01
+#define TRACE_L 2 // 10
+#define TRACE_UL 3 // 11
+//////////////////
+
+
+#define BYTETOBINARYPATTERN "%d%d%d%d%d%d%d%d"
+#define BYTETOBINARY(byte)  \
+  (byte & 0x80 ? 1 : 0), \
+  (byte & 0x40 ? 1 : 0), \
+  (byte & 0x20 ? 1 : 0), \
+  (byte & 0x10 ? 1 : 0), \
+  (byte & 0x08 ? 1 : 0), \
+  (byte & 0x04 ? 1 : 0), \
+  (byte & 0x02 ? 1 : 0), \
+  (byte & 0x01 ? 1 : 0) 
+
+
 void dataInput( char *sequence_set1, 
 				char *sequence_set2, 
 				unsigned int *pos1, 

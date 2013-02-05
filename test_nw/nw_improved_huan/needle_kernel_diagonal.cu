@@ -2,15 +2,10 @@
 #include <stdio.h>
 #include <cuda.h>
 
+
 #if defined (__CUDA_ARCH__) && (__CUDA_ARCH__ < 200)
 #define printf(f, ...) ((void)(f, __VA_ARGS__),0)
 #endif
-
-//////////////////
-#define TRACE_U 0
-#define TRACE_L 1
-#define TRACE_UL 2
-//////////////////
 
 __constant__ char blosum62[24][24] = {
 { 4, -1, -2, -2,  0, -1, -1,  0, -2, -1, -1, -1, -1, -2, -1,  1,  0, -3, -2,  0, -2, -1,  0, -4},
@@ -39,24 +34,35 @@ __constant__ char blosum62[24][24] = {
 {-4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4,  1}
 };
 
-__device__ __host__ short gpu_max_3( short a, short b, short c, short * idx)
+__device__ __host__ int gpu_max_3( int a, int b, int c, short penalty, short diag_penalty/*, short * idx*/)
 {
 	int tmp;
+	int tmp_l;
+
+	// HACK HACK HACK
+	// This one discards the last 2 bits for the directional traceback.
 	
-	if (a >= b) {
-		*idx = 0;
-		tmp = a;
+	int tmp_a = (a >> 2) + penalty;
+	int tmp_b = (b >> 2) + penalty;
+	int tmp_c = (c >> 2) + diag_penalty;
+	
+	if (tmp_a > tmp_b) {
+		//*idx = 0;
+		tmp = tmp_a << 2 | TRACE_U;
+		tmp_l = tmp_a;
 	} else {
-		*idx = 1;
-		tmp = b;
+		//*idx = 1;
+		tmp = tmp_b << 2 | TRACE_L;
+		tmp_l = tmp_b;
+	}
+	if (tmp_c > tmp_l) {
+		//*idx = 3;
+		tmp = tmp_c << 2 | TRACE_UL;
+		tmp_l = tmp_c;
 	}
 
-	if (c >= tmp) {
-		*idx = 3;
-		return c;
-	} else {
-		return tmp;
-	}
+	//printf("Got a, b, c, ta, tb, tc = %x, %x, %x | %x, %x, %x | max= %d\n", a, b, c, tmp_a, tmp_b, tmp_c, tmp_l >> 2);
+	return tmp;
 }
 
 /*******************************************************************************
@@ -103,8 +109,8 @@ __global__ void needleman_cuda_diagonal(char *sequence_set1, char *sequence_set2
 	int iteration;
 	// process the left-up triangle
 	s_dia1[0] = matrix[0] = 0;
-	s_dia2[0] = matrix[1] = penalty * 1;
-	s_dia2[1] = matrix[1*(seq1_len+1)] = penalty * 1;
+	s_dia2[0] = matrix[1] = penalty * 1 << 2;
+	s_dia2[1] = matrix[1*(seq1_len+1)] = penalty * 1 << 2;
 
 	p_dia1 = s_dia1;
 	p_dia2 = s_dia2;
@@ -116,13 +122,13 @@ __global__ void needleman_cuda_diagonal(char *sequence_set1, char *sequence_set2
 			if ( tid+stripe*j<=i ) {	// ith diagonal has i+1 elements
 				index_x = i-(tid+stripe*j);
 				index_y = tid+stripe*j;
-				if ( index_y==0 || index_y==i )	p_dia3[ index_y ] =  penalty * i;
+				if ( index_y==0 || index_y==i )	p_dia3[ index_y ] =  penalty * i  << 2;
 				else {
 					p_dia3[ index_y ] = 	
-						gpu_max_3(p_dia2[ index_y ] + penalty,	// up
-								p_dia2[ index_y-1 ] + penalty,	// left
-								p_dia1[ index_y-1 ]+blosum62[ s_seq2[index_x] ][ s_seq1[index_y] ],
-								&tmp_ret );
+						gpu_max_3(p_dia2[ index_y ],	// up
+								p_dia2[ index_y-1 ],	// left
+								p_dia1[ index_y-1 ], penalty, blosum62[ s_seq2[index_x] ][ s_seq1[index_y] ] /*,
+								&tmp_ret */);
 				}
 				// store to global memory
 				matrix[ index_x*(seq1_len+1)+index_y ] = p_dia3[ index_y ];
@@ -158,10 +164,10 @@ __global__ void needleman_cuda_diagonal(char *sequence_set1, char *sequence_set2
 			index_x = seq2_len - (tid+stripe*i);
 			index_y = 1 + (tid+stripe*i);
 			p_dia2[ tid+stripe*i ] = 
-				gpu_max_3(p_dia1[ tid+stripe*i+1 ] + penalty,	// up
-						p_dia1[ tid+stripe*i ] + penalty,	// left
-						matrix[(index_x-1)*(seq1_len+1)+index_y-1]+blosum62[s_seq2[index_x]][s_seq1[index_y]],
-						&tmp_ret );
+				gpu_max_3(p_dia1[ tid+stripe*i+1 ],	// up
+						p_dia1[ tid+stripe*i ],	// left
+						matrix[(index_x-1)*(seq1_len+1)+index_y-1], penalty, blosum62[s_seq2[index_x]][s_seq1[index_y]]/*,
+						&tmp_ret */);
 			matrix[ index_x*(seq1_len+1)+index_y ] = p_dia2[ tid+stripe*i ];
 		}
 	}
@@ -174,10 +180,10 @@ __global__ void needleman_cuda_diagonal(char *sequence_set1, char *sequence_set2
 			index_y =  i + (tid+stripe*j);
 			if ( tid+stripe*j +i <seq1_len+1 ) {
 				p_dia3[ tid+stripe*j ] = 
-					gpu_max_3(p_dia2[ tid+stripe*j+1 ] + penalty,	// up
-							p_dia2[ tid+stripe*j ] + penalty,	// left
-							p_dia1[ tid+stripe*j+1 ]+blosum62[ s_seq2[index_x] ][ s_seq1[index_y] ],
-							&tmp_ret);
+					gpu_max_3(p_dia2[ tid+stripe*j+1 ],	// up
+							p_dia2[ tid+stripe*j ],	// left
+							p_dia1[ tid+stripe*j+1 ], penalty, blosum62[ s_seq2[index_x] ][ s_seq1[index_y] ]/*,
+							&tmp_ret */);
 				// store to global memory
 				matrix[ index_x*(seq1_len+1)+index_y ] = p_dia3[ tid+stripe*j ];
 			}
