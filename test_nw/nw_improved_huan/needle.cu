@@ -12,7 +12,7 @@
 #include "needle_cpu.h"
 
 
-#define LENGTH 20
+#define LENGTH 2000
 #define TRACEBACK
 // includes, kernels
 #include "needle_cpu.c"
@@ -117,13 +117,13 @@ void runTest( int argc, char** argv)
         seq1_len = LENGTH; //64+rand() % 20;
         //printf("Seq1 length: %d\n", seq1_len);
         for (int j=0; j<seq1_len; ++j)
-            sequence_set1[ pos1[i] + j ] = 'A'; //rand() % 20 + 'A';
+            sequence_set1[ pos1[i] + j ] = rand() % 20 + 'A';
         pos1[i+1] = pos1[i] + seq1_len;
         //please define your own sequence 2.
         seq2_len = LENGTH;//64+rand() % 20;
         //printf("Seq2 length: %d\n\n", seq2_len);
         for (int j=0; j<seq2_len; ++j)
-            sequence_set2[ pos2[i] +j ] = 'A'; //rand() % 20 + 'A';
+            sequence_set2[ pos2[i] +j ] = rand() % 20 + 'A';
         pos2[i+1] = pos2[i] + seq2_len;
         //printf("Matrix size increase: %d\n", (seq1_len+1) * (seq2_len+1));
         pos_matrix[i+1] = pos_matrix[i] + (seq1_len+1) * (seq2_len+1);
@@ -223,20 +223,17 @@ void runTest( int argc, char** argv)
 		printf("2nd seq len = %d =\n%.*s\n", seq2_end - seq2_begin, seq2_end - seq2_begin, sequence_set2 + seq2_begin);
 		printf("traceback = \n");
 		bool done = false;
-		int current_pos = (seq1_end - seq1_begin) * (seq2_end - seq2_begin); // start at the last cell of the matrix
+		int current_pos = ((seq1_end - seq1_begin)+1) * ((seq2_end - seq2_begin)+1) -1; // start at the last cell of the matrix
 
-		for (int i = 0; i < LENGTH; i++) {
-			for (int j = 0; j < LENGTH; j++) {
-				int dir = current_matrix[i*LENGTH+j];
+		for (int i = 0; i < LENGTH + 1; i++) {
+			for (int j = 0; j < LENGTH + 1; j++) {
+				int dir = current_matrix[i*(LENGTH+1)+j];
 				if ((dir & 0x03) == TRACE_UL) {
-					printf("x");
-					current_pos = current_pos - (seq1_end - seq1_begin) - 1;
+					printf("\\");
 				} else if ((dir & 0x03) == TRACE_U) {
-					printf("u");
-					current_pos = current_pos - (seq1_end - seq1_begin);
+					printf("^");
 				} else if ((dir & 0x03) == TRACE_L) {
-					printf("l");
-					current_pos = current_pos - 1;
+					printf("<");
 				} else {
 					printf("-");
 				}
@@ -245,9 +242,9 @@ void runTest( int argc, char** argv)
 		}
 
 
-		for (int i = 0; i < LENGTH; i++) {
-			for (int j = 0; j < LENGTH; j++) {
-				int dir = current_matrix[i*LENGTH+j] >> 2;
+		for (int i = 0; i < LENGTH + 1; i++) {
+			for (int j = 0; j < LENGTH + 1; j++) {
+				int dir = current_matrix[i*(LENGTH+1)+j] >> 2;
 				printf("%4d ", dir);
 			}
 			printf("\n");
@@ -256,16 +253,16 @@ void runTest( int argc, char** argv)
 		printf("Actual traceback:\n");
 		while (!done) {
 			int dir = current_matrix[current_pos];
-			//printf("pos_matrix_next = %d, pos_matrix_cur = %d, current_pos = %d, dir = %x, trace_ul = %x", pos_matrix[1], pos_matrix[0], current_pos, dir, TRACE_UL);
+//			printf("current_pos = %d, dir = %x, score = %d\n", current_pos, dir & 0x03, dir >> 2);
 			
 			if ((dir & 0x03) == TRACE_UL) {
-				printf("x");
-				current_pos = current_pos - (seq1_end - seq1_begin) - 1;
+				printf("\\");
+				current_pos = current_pos - (seq1_end - seq1_begin + 1) - 1;
 			} else if ((dir & 0x03) == TRACE_U) {
-				printf("u");
-				current_pos = current_pos - (seq1_end - seq1_begin);
+				printf("^");
+				current_pos = current_pos - (seq1_end - seq1_begin + 1);
 			} else if ((dir & 0x03) == TRACE_L) {
-				printf("l");
+				printf("<");
 				current_pos = current_pos - 1;
 			} else {
 				printf("seems to have reached the origin...");

@@ -31,7 +31,8 @@ void needleman_cpu(char *sequence_set1,
 			//fill the score matrix
 			for(int k = 1; k <= seq2_len; ++k){           
 				for(int j = 1; j <= seq1_len; ++j){						
-					dia = matrix[(k-1)*(seq1_len+1)+j-1]+blosum62_cpu[ seq2[k-1] ][ seq1[j-1] ];
+					dia = matrix[(k-1)*(seq1_len+1)+j-1] + ((seq2[k-1] == seq1[j-1]) ? 1 : -1);
+				//	dia = matrix[(k-1)*(seq1_len+1)+j-1]+blosum62_cpu[ seq2[k-1] ][ seq1[j-1] ];
 					up	= matrix[(k-1)*(seq1_len+1)+j] + penalty;
 					left= matrix[k*(seq1_len+1)+j-1] + penalty;
 					matrix[k*(seq1_len+1)+j] = max_3(left, dia, up);

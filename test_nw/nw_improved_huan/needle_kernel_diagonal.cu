@@ -127,8 +127,9 @@ __global__ void needleman_cuda_diagonal(char *sequence_set1, char *sequence_set2
 					p_dia3[ index_y ] = 	
 						gpu_max_3(p_dia2[ index_y ],	// up
 								p_dia2[ index_y-1 ],	// left
-								p_dia1[ index_y-1 ], penalty, blosum62[ s_seq2[index_x] ][ s_seq1[index_y] ] /*,
-								&tmp_ret */);
+								p_dia1[ index_y-1 ], penalty, (s_seq2[index_x] == s_seq1[index_y]) ? 1 : -1 /*blosum62[ s_seq2[index_x] ][ s_seq1[index_y] ] */ /*,
+								&tmp_ret */
+						);
 				}
 				// store to global memory
 				matrix[ index_x*(seq1_len+1)+index_y ] = p_dia3[ index_y ];
@@ -166,8 +167,8 @@ __global__ void needleman_cuda_diagonal(char *sequence_set1, char *sequence_set2
 			p_dia2[ tid+stripe*i ] = 
 				gpu_max_3(p_dia1[ tid+stripe*i+1 ],	// up
 						p_dia1[ tid+stripe*i ],	// left
-						matrix[(index_x-1)*(seq1_len+1)+index_y-1], penalty, blosum62[s_seq2[index_x]][s_seq1[index_y]]/*,
-						&tmp_ret */);
+						matrix[(index_x-1)*(seq1_len+1)+index_y-1], penalty, (s_seq2[index_x] == s_seq1[index_y]) ? 1 : -1 //blosum62[s_seq2[index_x]][s_seq1[index_y]]/*,&tmp_ret */
+				);
 			matrix[ index_x*(seq1_len+1)+index_y ] = p_dia2[ tid+stripe*i ];
 		}
 	}
@@ -182,8 +183,8 @@ __global__ void needleman_cuda_diagonal(char *sequence_set1, char *sequence_set2
 				p_dia3[ tid+stripe*j ] = 
 					gpu_max_3(p_dia2[ tid+stripe*j+1 ],	// up
 							p_dia2[ tid+stripe*j ],	// left
-							p_dia1[ tid+stripe*j+1 ], penalty, blosum62[ s_seq2[index_x] ][ s_seq1[index_y] ]/*,
-							&tmp_ret */);
+							p_dia1[ tid+stripe*j+1 ], penalty, (s_seq2[index_x] == s_seq1[index_y]) ? 1 : -1 //, blosum62[ s_seq2[index_x] ][ s_seq1[index_y] ]/*, &tmp_ret */
+					);
 				// store to global memory
 				matrix[ index_x*(seq1_len+1)+index_y ] = p_dia3[ tid+stripe*j ];
 			}
