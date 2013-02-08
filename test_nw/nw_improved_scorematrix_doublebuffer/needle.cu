@@ -9,7 +9,7 @@
 #include <cuda.h>
 #include <sys/time.h>
 #include "needle.h"
-//#include "needle_cpu.h"
+#include "needle_cpu.h"
 
 // includes, kernels
 //#include "needle_cpu.c"
@@ -149,8 +149,8 @@ void runTest( int argc, char** argv)
 	}
 	score_matrix[0] = (int *)malloc( pos_matrix[0][pair_num0]*sizeof(int));
 	score_matrix[1] = (int *)malloc( pos_matrix[1][pair_num1]*sizeof(int));
-//	score_matrix_cpu = (int *)malloc( pos_matrix[pair_num]*sizeof(int)); 
-//	needleman_cpu(sequence_set1, sequence_set2, pos1, pos2, score_matrix_cpu, pos_matrix, pair_num, penalty);
+	score_matrix_cpu = (int *)malloc( pos_matrix[pair_num]*sizeof(int));
+	needleman_cpu(sequence_set1, sequence_set2, pos1, pos2, score_matrix_cpu, pos_matrix, pair_num, penalty);
 
 	// printf("Start Needleman-Wunsch\n");
 	// 1st half
@@ -186,12 +186,6 @@ void runTest( int argc, char** argv)
 	//fprintf(stdout,"Memcpy to device,%lf\n",end_time-time);
 	//time = end_time;
 
-	// the threads in block should equal to the STRIDE_SIZE
-/*	needleman_cuda_dynamic<<<14, 128>>>(d_sequence_set1, d_sequence_set2, 
-									   d_pos1, d_pos2,
-									   d_score_matrix, d_pos_matrix,
-									   pair_num, penalty);
-*/
 	needleman_cuda_diagonal<<<pair_num0,512>>>(d_sequence_set1[0], d_sequence_set2[0], 
 									   d_pos1[0], d_pos2[0],
 									   d_score_matrix[0], d_pos_matrix[0],
@@ -221,11 +215,11 @@ void runTest( int argc, char** argv)
 	fprintf(stdout,"Total CUDA implementation time, %lf\n",end_time-time);
 	time = end_time;
 	
-/*	if ( validation(score_matrix_cpu, score_matrix, pos_matrix[pair_num]) )		
+	if ( validation(score_matrix_cpu, score_matrix, pos_matrix[pair_num]) )
 		printf("Validation: PASS\n");
 	else
 		printf("Validation: FAIL\n");		
-*/
+
 #ifdef TRACEBACK
 	for (int i = max_rows - 2,  j = max_rows - 2; i>=0, j>=0;){
 		int nw, n, w, traceback;
