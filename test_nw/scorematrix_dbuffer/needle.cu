@@ -79,7 +79,6 @@ void usage(int argc, char **argv)
 
 void * needleman_part(void * arg)
 {
-
 	// Boilerplate to get all the arguments
 	struct needle_work *arg_p = static_cast<struct needle_work *>(arg);
 
@@ -104,11 +103,17 @@ void * needleman_part(void * arg)
 	int end = (start + batch_size > max_pair_no) ? max_pair_no : start + batch_size;
 	batch_size = end - begin; // this is pretty bad, I should have not done this...
 
+  printf("Got here %d\n", __LINE__);
     cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set1, sizeof(char)*(pos1[end] - pos1[begin]) ));
+  printf("Got here %d\n", __LINE__);
     cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set2, sizeof(char)*(pos2[end] - pos2[begin])) );
+  printf("Got here %d\n", __LINE__);
     cudaCheckError( __LINE__, cudaMalloc( (void**)&d_score_matrix, sizeof(int)*(pos_matrix[end] - pos_matrix[begin])) );
+  printf("Got here %d\n", __LINE__);
     cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos1, sizeof(unsigned int)*(batch_size+1) ) );
+  printf("Got here %d\n", __LINE__);
     cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos2, sizeof(unsigned int)*(batch_size+1) ) );
+  printf("Got here %d\n", __LINE__);
     cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos_matrix, sizeof(unsigned int)*(batch_size+1) ) );
 
     // Memcpy to device
@@ -194,6 +199,7 @@ void * needleman_part(void * arg)
 			abort();
 		}		
 	}
+    return NULL;
 }
 
 
