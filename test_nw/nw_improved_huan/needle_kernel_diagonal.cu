@@ -113,8 +113,8 @@ __global__ void needleman_cuda_diagonal(char *sequence_set1, char *sequence_set2
 	int iteration;
 	// process the left-up triangle
 	s_dia1[0] = matrix[0] = 0;
-	s_dia2[0] = matrix[1] = penalty * 1 << 2;
-	s_dia2[1] = matrix[1*(seq1_len+1)] = penalty * 1 << 2;
+	s_dia2[0] = matrix[1] = penalty * 1 << 2 | TRACE_L;
+	s_dia2[1] = matrix[1*(seq1_len+1)] = penalty * 1 << 2 | TRACE_U;
 
 	p_dia1 = s_dia1;
 	p_dia2 = s_dia2;
@@ -131,9 +131,9 @@ __global__ void needleman_cuda_diagonal(char *sequence_set1, char *sequence_set2
 				// We want to calculate all the scores and directions for the
 				// ones on the TOP and LEFTmost of the matrix
 				if ( index_y==0 ) {
-					p_dia3[ index_y ] =  (penalty * i  << 2) | TRACE_L;
-				} else if (index_y==i) {
 					p_dia3[ index_y ] =  (penalty * i  << 2) | TRACE_U;
+				} else if (index_y==i) {
+					p_dia3[ index_y ] =  (penalty * i  << 2) | TRACE_L;
 				}
 					
 				//if ( index_y==0 || index_y==i )	p_dia3[ index_y ] =  penalty * i  << 2;
