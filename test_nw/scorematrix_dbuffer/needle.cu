@@ -76,6 +76,189 @@ void usage(int argc, char **argv)
 }
 
 
+
+void * needleman_part(void * arg)
+{
+
+	// Boilerplate to get all the arguments
+	struct needle_work *arg_p = static_cast<struct needle_work *>(arg);
+
+	char *sequence_set1 = arg_p->sequence_set1;
+	char *sequence_set2 = arg_p->sequence_set2;
+	unsigned int *pos1 = arg_p->pos1;
+	unsigned int *pos2 = arg_p->pos2;
+	int *score_matrix = arg_p->score_matrix;
+	unsigned int *pos_matrix = arg_p->pos_matrix;
+	unsigned int max_pair_no = arg_p->max_pair_no;
+	short penalty = arg_p->penalty;
+	unsigned int start  = arg_p->start;
+	unsigned int batch_size = arg_p->batch_size;
+	pthread_mutex_t * work_lock  = arg_p->work_lock;
+	pthread_cond_t * work_free = arg_p->work_free;
+
+	char *d_sequence_set1, *d_sequence_set2;
+    unsigned int *d_pos1, *d_pos2, *d_pos_matrix;
+    int *d_score_matrix;
+
+	int begin = start; // this is redundant...
+	int end = (start + batch_size > max_pair_no) ? max_pair_no : start + batch_size;
+	batch_size = end - begin; // this is pretty bad, I should have not done this...
+
+    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set1, sizeof(char)*(pos1[end] - pos1[begin]) ));
+    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set2, sizeof(char)*(pos2[end] - pos2[begin])) );
+    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_score_matrix, sizeof(int)*(pos_matrix[end] - pos_matrix[begin])) );
+    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos1, sizeof(unsigned int)*(batch_size+1) ) );
+    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos2, sizeof(unsigned int)*(batch_size+1) ) );
+    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos_matrix, sizeof(unsigned int)*(batch_size+1) ) );
+
+    // Memcpy to device
+    cudaCheckError( __LINE__,
+		cudaMemcpy( d_sequence_set1, sequence_set1 + pos1[begin], sizeof(char)*(pos1[end] - pos1[begin]), cudaMemcpyHostToDevice )
+	);
+
+    cudaCheckError( __LINE__,
+		cudaMemcpy( d_sequence_set2, sequence_set2 + pos2[begin], sizeof(char)*(pos2[end] - pos2[begin]), cudaMemcpyHostToDevice )
+	);
+
+    cudaCheckError( __LINE__,
+		cudaMemcpy( d_pos1, pos1 + begin, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice )
+	);
+
+    cudaCheckError( __LINE__,
+		cudaMemcpy( d_pos2, pos2 + begin, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice )
+	);
+
+    cudaCheckError( __LINE__,
+		cudaMemcpy( d_pos_matrix, pos_matrix + begin, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice )
+	);
+
+    //end_time = gettime();
+    //fprintf(stdout,"Memcpy to device,%lf\n",end_time-time);
+    //time = end_time;
+	if (start != 0) {
+		printf("Waititing for the last GPU worker to get done... ");
+		// wait while the other thread is doing work
+		pthread_mutex_lock (work_lock);
+		pthread_cond_wait (work_free, work_lock);
+		pthread_mutex_unlock(work_lock);
+
+		printf("Go\n");
+	}
+	
+    needleman_cuda_diagonal<<<batch_size,512>>>(d_sequence_set1, d_sequence_set2,
+            d_pos1, d_pos2,
+            d_score_matrix, d_pos_matrix,
+            batch_size, arg_p->penalty);
+    cudaCheckError( __LINE__, cudaDeviceSynchronize() );
+
+	pthread_mutex_lock (work_lock);
+	pthread_cond_broadcast (work_free);
+	pthread_mutex_unlock(work_lock);
+
+	pthread_t * needleman_part_thread = new pthread_t;
+	//Create the next needle part thread...
+	if (end < max_pair_no) {
+		struct needle_work u;
+		u.sequence_set1 = sequence_set1;
+		u.sequence_set2 = sequence_set2;
+		u.score_matrix = score_matrix;
+		u.pos_matrix = pos_matrix;
+		u.max_pair_no = max_pair_no;
+		u.penalty = penalty;
+		u.start = end;
+		u.batch_size = end + batch_size;
+		u.work_lock = work_lock;
+		u.work_free = work_free;
+		void *u_ptr = static_cast<void *>(&u);
+
+		if (pthread_create (needleman_part_thread, NULL, needleman_part, u_ptr)) {
+			printf( "Error creating needleman_part thread.\n" );
+			abort();
+		}
+	}
+    //end_time = gettime();
+    //fprintf(stdout,"kernel,%lf\n",end_time-time);
+    //time = end_time;
+    // Memcpy to host
+    cudaCheckError( __LINE__, cudaMemcpy( score_matrix, d_score_matrix, sizeof(int)*pos_matrix[batch_size], cudaMemcpyDeviceToHost ) );
+
+    cudaFree(d_sequence_set1);
+    cudaFree(d_sequence_set2);
+    cudaFree(d_pos1);
+    cudaFree(d_pos2);
+    cudaFree(d_pos_matrix);
+    cudaFree(d_score_matrix);
+	if (end < max_pair_no) {
+		if (pthread_join (*needleman_part_thread, NULL) ) {
+			printf( "Error joining needleman_part reader thread.\n" );
+			abort();
+		}		
+	}
+}
+
+
+
+void needleman_gpu(char *sequence_set1,
+				   char *sequence_set2,
+				   unsigned int *pos1,
+				   unsigned int *pos2,
+				   int *score_matrix,
+				   unsigned int *pos_matrix,
+				   unsigned int max_pair_no,
+				   short penalty) {
+	
+	// First we need to see how to devide the memory...
+	// Query the device capabilities to see how much we can allocate for this problem
+
+	size_t freeMem = 0;
+	size_t totalMem = 0;
+	cudaMemGetInfo(&freeMem, &totalMem);
+	printf("Memory avaliable: Free: %lu, Total: %lu\n",freeMem/1024/1024, totalMem/1024/1024);
+
+	int batch_size = 0;
+	int eachSeqMem = sizeof(char)*LENGTH*2
+					+ sizeof(int)*(LENGTH+1)*(LENGTH+1)
+					+ sizeof(unsigned int)*3;
+	batch_size = freeMem / eachSeqMem / 3 - 1; // Safety reasons...
+
+	printf("Each batch will be containing this many pairs: %d\n", batch_size);
+
+	////////////////////////////////////////////////////////////////////////////
+
+	pthread_mutex_t * work_lock = new pthread_mutex_t;
+	pthread_mutex_init(work_lock, NULL);
+
+	pthread_cond_t * work_free = new pthread_cond_t;
+	pthread_cond_init (work_free, NULL);
+
+	pthread_t * needleman_part_thread = new pthread_t;
+	
+	struct needle_work u;
+	u.sequence_set1 = sequence_set1;
+	u.sequence_set2 = sequence_set2;
+	u.score_matrix = score_matrix;
+	u.pos_matrix = pos_matrix;
+	u.max_pair_no = max_pair_no;
+	u.penalty = penalty;
+	u.start = 0;
+	u.batch_size = batch_size;
+	u.work_lock = work_lock;
+	u.work_free = work_free;
+	void *u_ptr = static_cast<void *>(&u);
+
+	if (pthread_create (needleman_part_thread, NULL, needleman_part, u_ptr)) {
+		printf( "Error creating needleman_part thread.\n" );
+		abort();
+	}
+
+	if (pthread_join (*needleman_part_thread, NULL) ) {
+		printf( "Error joining needleman_part thread.\n" );
+		abort();
+	}
+	
+	delete needleman_part_thread;
+}
+
 void runTest( int argc, char** argv)
 {
     double time, end_time;
@@ -87,9 +270,6 @@ void runTest( int argc, char** argv)
     int *trace_matrix;
     int *score_matrix_cpu;
     int *trace_matrix_cpu;
-    char *d_sequence_set1, *d_sequence_set2;
-    unsigned int *d_pos1, *d_pos2, *d_pos_matrix;
-    int *d_score_matrix;
     int seq1_len, seq2_len;
 
     if (argc == 3)
@@ -111,7 +291,6 @@ void runTest( int argc, char** argv)
 
     end_time = gettime();
     fprintf(stdout,"First API,%lf\n",end_time-time);
-    time = end_time;
 
     // Get input data
 
@@ -133,7 +312,6 @@ void runTest( int argc, char** argv)
         //printf("Matrix size increase: %d\n", (seq1_len+1) * (seq2_len+1));
         pos_matrix[i+1] = pos_matrix[i] + (seq1_len+1) * (seq2_len+1);
     }
-    score_matrix = (int *)malloc( pos_matrix[pair_num]*sizeof(int));
     
     score_matrix_cpu = (int *)malloc( pos_matrix[pair_num]*sizeof(int));	
     
@@ -141,25 +319,6 @@ void runTest( int argc, char** argv)
 	printf ("Running on a 64-bit platform!\n");
 	#else
 	#endif
-
-
-	// Meat of the problem
-	
-	// First we need to see how to devide the memory...
-	// Query the device capabilities to see how much we can allocate for this problem
-
-	size_t freeMem = 0;
-	size_t totalMem = 0;
-	cudaMemGetInfo(&freeMem, &totalMem);
-	printf("Memory avaliable: Free: %lu, Total: %lu\n",freeMem/1024/1024, totalMem/1024/1024);
-
-	int pairs = 0;
-	int eachSeqMem = sizeof(char)*LENGTH*2
-					+ sizeof(int)*(LENGTH+1)*(LENGTH+1)
-					+ sizeof(unsigned int)*3;
-	pairs = freeMem / eachSeqMem;
-	
-	printf("Each batch will be containing this many pairs: %d\n", pairs);
 	
 	/*
 	short M = -1;
@@ -174,62 +333,22 @@ void runTest( int argc, char** argv)
 		sizeof(short)
 	);
 	
+	time = gettime();
     needleman_cpu(sequence_set1, sequence_set2, pos1, pos2, score_matrix_cpu, pos_matrix, pair_num, penalty);
+	
+    // CPU phases
+    end_time = gettime();
+    fprintf(stdout,"CPU calc: %lf\n",end_time-time);
 
-    // printf("Start Needleman-Wunsch\n");
+	score_matrix = (int *)malloc( pos_matrix[pair_num]*sizeof(int));
 
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set1, sizeof(char)*pos1[pair_num] ) );
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set2, sizeof(char)*pos2[pair_num] ) );
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_score_matrix, sizeof(int)*pos_matrix[pair_num]) );
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos1, sizeof(unsigned int)*(pair_num+1) ) );
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos2, sizeof(unsigned int)*(pair_num+1) ) );
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos_matrix, sizeof(unsigned int)*(pair_num+1) ) );
+	time = gettime();
+    needleman_gpu(sequence_set1, sequence_set2, pos1, pos2, score_matrix_cpu, pos_matrix, pair_num, penalty);
 
     // CPU phases
     end_time = gettime();
-    fprintf(stdout,"CPU,%lf\n",end_time-time);
-    time = end_time;
+    fprintf(stdout,"GPU calc: %lf\n",end_time-time);
 
-    // Memcpy to device
-    cudaCheckError( __LINE__,
-		cudaMemcpy( d_sequence_set1, sequence_set1, sizeof(char)*pos1[pair_num], cudaMemcpyHostToDevice )
-	);
-	
-    cudaCheckError( __LINE__,
-		cudaMemcpy( d_sequence_set2, sequence_set2, sizeof(char)*pos2[pair_num], cudaMemcpyHostToDevice )
-	);
-	
-    cudaCheckError( __LINE__,
-		cudaMemcpy( d_pos1, pos1, sizeof(unsigned int)*(pair_num+1), cudaMemcpyHostToDevice )
-	);
-	
-    cudaCheckError( __LINE__,
-		cudaMemcpy( d_pos2, pos2, sizeof(unsigned int)*(pair_num+1), cudaMemcpyHostToDevice )
-	);
-	
-    cudaCheckError( __LINE__,
-		cudaMemcpy( d_pos_matrix, pos_matrix, sizeof(unsigned int)*(pair_num+1), cudaMemcpyHostToDevice )
-	);
-
-    //end_time = gettime();
-    //fprintf(stdout,"Memcpy to device,%lf\n",end_time-time);
-    //time = end_time;
-
-    needleman_cuda_diagonal<<<pair_num,512>>>(d_sequence_set1, d_sequence_set2,
-            d_pos1, d_pos2,
-            d_score_matrix, d_pos_matrix,
-            pair_num, penalty);
-    cudaCheckError( __LINE__, cudaDeviceSynchronize() );
-    //end_time = gettime();
-    //fprintf(stdout,"kernel,%lf\n",end_time-time);
-    //time = end_time;
-    // Memcpy to host
-    cudaCheckError( __LINE__, cudaMemcpy( score_matrix, d_score_matrix, sizeof(int)*pos_matrix[pair_num], cudaMemcpyDeviceToHost ) );
-
-    end_time = gettime();
-    //fprintf(stdout,"Memcpy to host,%lf\n",end_time-time);
-    fprintf(stdout,"Total CUDA implementation time, %lf\n",end_time-time);
-    time = end_time;
 
     if ( validation(score_matrix_cpu, score_matrix, pos_matrix[pair_num]) )
         printf("Validation: PASS\n");
@@ -298,12 +417,6 @@ void runTest( int argc, char** argv)
 	#endif
 	
 	//	fclose(fpo);
-    cudaFree(d_sequence_set1);
-    cudaFree(d_sequence_set2);
-    cudaFree(d_pos1);
-    cudaFree(d_pos2);
-    cudaFree(d_pos_matrix);
-    cudaFree(d_score_matrix);
     //free(score_matrix);
 
 }
