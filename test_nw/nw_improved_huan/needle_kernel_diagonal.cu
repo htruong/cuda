@@ -130,9 +130,7 @@ __global__ void needleman_cuda_diagonal(char *sequence_set1, char *sequence_set2
 				// HACK Huan's hack
 				// We want to calculate all the scores and directions for the
 				// ones on the TOP and LEFTmost of the matrix
-				if ( (index_x == 0) && (index_y == 0) ) {
-					p_dia3[ index_y ] =  0;
-				} else if ( index_y==0 ) {
+				if ( index_y==0 ) {
 					p_dia3[ index_y ] =  (penalty * i  << 2) | TRACE_L;
 				} else if (index_y==i) {
 					p_dia3[ index_y ] =  (penalty * i  << 2) | TRACE_U;
