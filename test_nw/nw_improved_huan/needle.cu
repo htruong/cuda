@@ -11,8 +11,10 @@
 #include "needle.h"
 #include "needle_cpu.h"
 
+#include <pthread.h>
 
-#define LENGTH 20
+
+#define LENGTH 2048
 #define TRACEBACK
 // includes, kernels
 #include "needle_cpu.c"
@@ -72,6 +74,11 @@ void usage(int argc, char **argv)
     fprintf(stderr, "\t<penalty> - penalty(negative integer)\n");
     exit(1);
 }
+
+
+
+
+
 
 void runTest( int argc, char** argv)
 {

@@ -9,7 +9,7 @@ SRC = needle.cu
 EXE = needle
 
 release: $(SRC)
-	$(CC) -arch=sm_20 $(SRC) -O3 -o $(EXE) -I$(INCLUDE) -L$(CUDA_LIB_DIR) -Xptxas=-v
+	$(CC) -arch=sm_20 $(SRC) -O3 -o $(EXE) -I$(INCLUDE) -L$(CUDA_LIB_DIR) -Xptxas=-v -lpthread
 
 enum: $(SRC)
 	$(CC) -deviceemu $(SRC) -o $(EXE) -I$(INCLUDE) -L$(CUDA_LIB_DIR) 
