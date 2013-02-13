@@ -14,8 +14,8 @@
 #include <pthread.h>
 
 
-#define LENGTH 2048
-#define TRACEBACK
+#define LENGTH 1600
+//#define TRACEBACK
 // includes, kernels
 #include "needle_cpu.c"
 //#include "needle_kernel_dynamic.cu"
@@ -151,7 +151,15 @@ void runTest( int argc, char** argv)
 	size_t freeMem = 0;
 	size_t totalMem = 0;
 	cudaMemGetInfo(&freeMem, &totalMem);
-	printf("Memory avaliable: Free: %lu, Total: %lu\n",freeMem, totalMem);
+	printf("Memory avaliable: Free: %lu, Total: %lu\n",freeMem/1024/1024, totalMem/1024/1024);
+
+	int pairs = 0;
+	int eachSeqMem = sizeof(char)*LENGTH*2
+					+ sizeof(int)*(LENGTH+1)*(LENGTH+1)
+					+ sizeof(unsigned int)*3;
+	pairs = freeMem / eachSeqMem;
+	
+	printf("Each batch will be containing this many pairs: %d\n", pairs);
 	
 	/*
 	short M = -1;
