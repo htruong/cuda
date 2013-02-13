@@ -34,12 +34,16 @@ __constant__ char blosum62[24][24] = {
 {-4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4,  1}
 };
 
+// HACK: Huan's hack
+// THIS FUNCTION TAKES 3 PARAMS, original UP, original LEFT, PENALTY and DIAG PENALTY
+// Do not calculate the scores beforehand
+// It will RETURN the score and the direction, a little bit ugly
+// FIRST 2 bits will be the direction, the REST will be the score.
 __device__ __host__ int gpu_max_3( int a, int b, int c, short penalty, short diag_penalty/*, short * idx*/)
 {
 	int tmp;
 	int tmp_l;
 
-	// HACK HACK HACK
 	// This one discards the last 2 bits for the directional traceback.
 	
 	int tmp_a = (a >> 2) + penalty;
@@ -122,7 +126,19 @@ __global__ void needleman_cuda_diagonal(char *sequence_set1, char *sequence_set2
 			if ( tid+stripe*j<=i ) {	// ith diagonal has i+1 elements
 				index_x = i-(tid+stripe*j);
 				index_y = tid+stripe*j;
-				if ( index_y==0 || index_y==i )	p_dia3[ index_y ] =  penalty * i  << 2;
+
+				// HACK Huan's hack
+				// We want to calculate all the scores and directions for the
+				// ones on the TOP and LEFTmost of the matrix
+				if ( (index_x == 0) && (index_y == 0) ) {
+					p_dia3[ index_y ] =  0;
+				} else if ( index_y==0 ) {
+					p_dia3[ index_y ] =  (penalty * i  << 2) | TRACE_L;
+				} else if (index_y==i) {
+					p_dia3[ index_y ] =  (penalty * i  << 2) | TRACE_U;
+				}
+					
+				//if ( index_y==0 || index_y==i )	p_dia3[ index_y ] =  penalty * i  << 2;
 				else {
 					p_dia3[ index_y ] = 	
 						gpu_max_3(p_dia2[ index_y ],	// up

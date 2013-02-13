@@ -12,7 +12,7 @@
 #include "needle_cpu.h"
 
 
-#define LENGTH 2000
+#define LENGTH 20
 #define TRACEBACK
 // includes, kernels
 #include "needle_cpu.c"
@@ -27,6 +27,8 @@ inline void cudaCheckError(int line, cudaError_t ce)
     }
 }
 
+// HACK Huan's hack
+// this is not the updated validation code
 int validation(int *score_matrix_cpu, int *score_matrix, unsigned int length)
 {
     unsigned int i = 0;
@@ -225,6 +227,7 @@ void runTest( int argc, char** argv)
 		bool done = false;
 		int current_pos = ((seq1_end - seq1_begin)+1) * ((seq2_end - seq2_begin)+1) -1; // start at the last cell of the matrix
 
+		// Fix LENGTH, so that it takes more than just square... this is not important
 		for (int i = 0; i < LENGTH + 1; i++) {
 			for (int j = 0; j < LENGTH + 1; j++) {
 				int dir = current_matrix[i*(LENGTH+1)+j];
@@ -241,7 +244,7 @@ void runTest( int argc, char** argv)
 			printf("\n");
 		}
 
-
+		// Fix LENGTH, so that it takes more than just square... this is not important
 		for (int i = 0; i < LENGTH + 1; i++) {
 			for (int j = 0; j < LENGTH + 1; j++) {
 				int dir = current_matrix[i*(LENGTH+1)+j] >> 2;
