@@ -6,7 +6,7 @@
 #if defined (__CUDA_ARCH__) && (__CUDA_ARCH__ < 200)
 #define printf(f, ...) ((void)(f, __VA_ARGS__),0)
 #endif
-
+/*
 __constant__ char blosum62[24][24] = {
 { 4, -1, -2, -2,  0, -1, -1,  0, -2, -1, -1, -1, -1, -2, -1,  1,  0, -3, -2,  0, -2, -1,  0, -4},
 {-1,  5,  0, -2, -3,  1,  0, -2,  0, -3, -2,  2, -1, -3, -2, -1, -1, -3, -2, -3, -1,  0, -1, -4},
@@ -33,7 +33,7 @@ __constant__ char blosum62[24][24] = {
 { 0, -1, -1, -1, -2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -2,  0,  0, -2, -1, -1, -1, -1, -1, -4},
 {-4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4,  1}
 };
-
+*/
 // HACK: Huan's hack
 // THIS FUNCTION TAKES 3 PARAMS, original UP, original LEFT, PENALTY and DIAG PENALTY
 // Do not calculate the scores beforehand
@@ -59,10 +59,11 @@ __device__ __host__ int gpu_max_3( int a, int b, int c, short penalty, short dia
 		tmp = tmp_b << 2 | TRACE_L;
 		tmp_l = tmp_b;
 	}
+
 	if (tmp_c > tmp_l) {
 		//*idx = 3;
 		tmp = tmp_c << 2 | TRACE_UL;
-		tmp_l = tmp_c;
+		//tmp_l = tmp_c;
 	}
 
 	//printf("Got a, b, c, ta, tb, tc = %x, %x, %x | %x, %x, %x | max= %d\n", a, b, c, tmp_a, tmp_b, tmp_c, tmp_l >> 2);
