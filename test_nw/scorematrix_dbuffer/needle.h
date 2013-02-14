@@ -50,6 +50,7 @@ void dataInput( char *sequence_set1,
 				int no_pair);
 
 
+bool gpu_free;
 
 
 #endif	//__NEEDLE_H__

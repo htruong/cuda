@@ -14,8 +14,8 @@
 #include <pthread.h>
 
 
-#define LENGTH 2048
-#define TRACEBACK
+#define LENGTH 1600
+//#define TRACEBACK
 // includes, kernels
 #include "needle_cpu.c"
 //#include "needle_kernel_dynamic.cu"
@@ -159,7 +159,6 @@ void runTest( int argc, char** argv)
 		sizeof(short)
 	);
 	
-    needleman_cpu(sequence_set1, sequence_set2, pos1, pos2, score_matrix_cpu, pos_matrix, pair_num, penalty);
 
     // printf("Start Needleman-Wunsch\n");
 
@@ -170,9 +169,11 @@ void runTest( int argc, char** argv)
     cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos2, sizeof(unsigned int)*(pair_num+1) ) );
     cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos_matrix, sizeof(unsigned int)*(pair_num+1) ) );
 
+	  time = gettime();
+    needleman_cpu(sequence_set1, sequence_set2, pos1, pos2, score_matrix_cpu, pos_matrix, pair_num, penalty);
     // CPU phases
     end_time = gettime();
-    fprintf(stdout,"CPU,%lf\n",end_time-time);
+    fprintf(stdout,"CPU time,%lf\n",end_time-time);
     time = end_time;
 
     // Memcpy to device
@@ -213,7 +214,7 @@ void runTest( int argc, char** argv)
 
     end_time = gettime();
     //fprintf(stdout,"Memcpy to host,%lf\n",end_time-time);
-    fprintf(stdout,"Total CUDA implementation time, %lf\n",end_time-time);
+    fprintf(stdout,"GPU time, %lf\n",end_time-time);
     time = end_time;
 
     if ( validation(score_matrix_cpu, score_matrix, pos_matrix[pair_num]) )
