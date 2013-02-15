@@ -15,7 +15,6 @@
 
 // includes, kernels
 #include "needle_cpu.c"
-#include "needle_kernel_dynamic.cu"
 #include "needle_kernel_diagonal.cu"
 
 inline void cudaCheckError(int line, cudaError_t ce)
@@ -30,17 +29,12 @@ inline void cudaCheckError(int line, cudaError_t ce)
 
 int validation(int *score_matrix_cpu, int *score_matrix, unsigned int length)
 {
-    unsigned int i = 0;
-    while (i!=length) {
-        if ( (score_matrix_cpu[i]) == (score_matrix[i]) ) {
-            ++i;
-            continue;
-        }
-        else {
-            printf("i = %d, expected %d, got %d.\n",i, score_matrix_cpu[i], score_matrix[i]);
-            return 0;
-        }
-    }
+    for (unsigned int i = 0; i < length; i++) {
+		if ( (score_matrix_cpu[i]) != (score_matrix[i]) ) {
+			printf("i = %d, seq pair=%d, element %d, expected %d, got %d.\n",i, i / (LENGTH*LENGTH), i % (LENGTH*LENGTH), score_matrix_cpu[i], score_matrix[i]);
+			return 0;
+		}
+	}
     return 1;
 }
 
@@ -129,7 +123,8 @@ void memcpy_and_run (bool async,
 					d_score_matrix, d_pos_matrix,
 					batch_size, penalty);
 		}
-		//cudaCheckError( __LINE__, cudaDeviceSynchronize() );
+		
+		cudaCheckError( __LINE__, cudaDeviceSynchronize() );
 		
 		#ifdef VERBOSE
 		printf("\t [%d - %d] Kernel: %f\n", begin, end, gettime() - start_marker);
@@ -179,7 +174,7 @@ void needleman_gpu(char *sequence_set1,
 	unsigned int eachSeqMem = sizeof(char)*LENGTH*2
 					+ sizeof(int)*(LENGTH+1)*(LENGTH+1)
 					+ sizeof(unsigned int)*3;
-	unsigned int batch_size = freeMem * 0.8 / eachSeqMem; // Safety reasons...
+	unsigned int batch_size = freeMem * 0.75 / eachSeqMem; // Safety reasons...
 	unsigned int half_b = batch_size / 2;
 	unsigned int other_half_b = batch_size - half_b;
 
@@ -203,17 +198,17 @@ void needleman_gpu(char *sequence_set1,
 	// Allocating memory for both halves
 	
 	// First half
-	cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set1_h1, sizeof(char)*(pos1[half_b]) ));
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set2_h1, sizeof(char)*(pos2[half_b])) );
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_score_matrix_h1, sizeof(int)*(pos_matrix[half_b])) );
+	cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set1_h1, sizeof(char)*(pos1[1]*half_b) ));
+    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set2_h1, sizeof(char)*(pos1[1]*half_b)) );
+    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_score_matrix_h1, sizeof(int)*(pos_matrix[1]*half_b)) );
     cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos1_h1, sizeof(unsigned int)*(half_b+1) ) );
     cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos2_h1, sizeof(unsigned int)*(half_b+1) ) );
     cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos_matrix_h1, sizeof(unsigned int)*(half_b+1) ) );
 
     // Second half
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set1_h2, sizeof(char)*(pos1[other_half_b]) ));
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set2_h2, sizeof(char)*(pos2[other_half_b])) );
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_score_matrix_h2, sizeof(int)*(pos_matrix[other_half_b])) );
+    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set1_h2, sizeof(char)*(pos1[1]*other_half_b) ));
+    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set2_h2, sizeof(char)*(pos2[1]*other_half_b)) );
+    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_score_matrix_h2, sizeof(int)*(pos_matrix[1]*other_half_b)) );
     cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos1_h2, sizeof(unsigned int)*(other_half_b+1) ) );
     cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos2_h2, sizeof(unsigned int)*(other_half_b+1) ) );
     cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos_matrix_h2, sizeof(unsigned int)*(other_half_b+1) ) );
@@ -224,101 +219,36 @@ void needleman_gpu(char *sequence_set1,
 
 	unsigned int start = 0;
 	unsigned int end = 0;
-	
+	bool turn = true;
 	while (!done) {
-		if (start + half_b > max_pair_no) {
+		int tmp_batch_sz = turn ? half_b : other_half_b;
+		if (start + tmp_batch_sz > max_pair_no) {
 			end = max_pair_no;
-			
-			memcpy_and_run (true,
-				start,
-				end,
-				&stream1,
-				sequence_set1,
-				sequence_set2,
-				d_sequence_set1_h1,
-				d_sequence_set2_h1,
-				pos1,
-				pos2,
-				d_pos1_h1,
-				d_pos2_h2,
-				score_matrix,
-				pos_matrix,
-				d_score_matrix_h1,
-				d_pos_matrix_h1,
-				penalty);
-				
 			done = true;
 		} else {
-			end = start + half_b;
-
-			memcpy_and_run (true,
-				start,
-				end,
-				&stream1,
-				sequence_set1,
-				sequence_set2,
-				d_sequence_set1_h1,
-				d_sequence_set2_h1,
-				pos1,
-				pos2,
-				d_pos1_h1,
-				d_pos2_h2,
-				score_matrix,
-				pos_matrix,
-				d_score_matrix_h1,
-				d_pos_matrix_h1,
-				penalty);
-
-			start = end;
-			
-				if (start + other_half_b > max_pair_no) {
-					end = max_pair_no;
-					
-					memcpy_and_run (true,
-						start,
-						end,
-						&stream2,
-						sequence_set1,
-						sequence_set2,
-						d_sequence_set1_h1,
-						d_sequence_set2_h1,
-						pos1,
-						pos2,
-						d_pos1_h1,
-						d_pos2_h2,
-						score_matrix,
-						pos_matrix,
-						d_score_matrix_h1,
-						d_pos_matrix_h1,
-						penalty);
-
-					done = true;
-				} else {
-					end = start + other_half_b;
-
-					memcpy_and_run (true,
-						start,
-						end,
-						&stream2,
-						sequence_set1,
-						sequence_set2,
-						d_sequence_set1_h1,
-						d_sequence_set2_h1,
-						pos1,
-						pos2,
-						d_pos1_h1,
-						d_pos2_h2,
-						score_matrix,
-						pos_matrix,
-						d_score_matrix_h1,
-						d_pos_matrix_h1,
-						penalty);
-					
-				}
+			end = start + tmp_batch_sz;
 		}
 		
+		memcpy_and_run (true,
+			start,
+			end,
+			turn ? &stream1 : &stream2 ,
+			sequence_set1,
+			sequence_set2,
+			turn ? d_sequence_set1_h1 : d_sequence_set1_h2,
+			turn ? d_sequence_set2_h1 : d_sequence_set2_h2,
+			pos1,
+			pos2,
+			turn ? d_pos1_h1 : d_pos1_h2,
+			turn ? d_pos2_h1 : d_pos2_h2,
+			score_matrix,
+			pos_matrix,
+			turn ? d_score_matrix_h1 : d_score_matrix_h2,
+			turn ? d_pos_matrix_h1 : d_pos_matrix_h2,
+			penalty);
+				
 		start = end;
-		
+		turn = !turn;
 	}
 	cudaDeviceSynchronize();
 	
@@ -374,7 +304,7 @@ void runTest( int argc, char** argv)
 
 	srand ( 7 );
 	pos_matrix[0] = pos1[0] = pos2[0] = 0;
-	for (int i=0; i<pair_num; ++i) {
+	for (int i=0; i<pair_num; i++) {
 		//please define your own sequence 1
 		seq1_len = LENGTH; //64+rand() % 20;
 		//printf("Seq1 length: %d\n", seq1_len);
@@ -419,8 +349,9 @@ void runTest( int argc, char** argv)
 	fprintf(stdout,"CPU calc: %lf\n",end_time-time);
 	// We need to free the score matrix for the cpu to prevent biasness against the scoring for the GPU calc
 	free(score_matrix_cpu);
-
+	
 	cudaMallocHost((void **) &score_matrix, pos_matrix[pair_num]*sizeof(int));
+	//score_matrix = (int *)malloc(pos_matrix[pair_num]*sizeof(int));
 
 	time = gettime();
 	needleman_gpu(sequence_set1, sequence_set2, pos1, pos2, score_matrix, pos_matrix, pair_num, penalty);
@@ -434,7 +365,6 @@ void runTest( int argc, char** argv)
 
 	score_matrix_cpu = (int *)malloc( pos_matrix[pair_num]*sizeof(int));
 	needleman_cpu(sequence_set1, sequence_set2, pos1, pos2, score_matrix_cpu, pos_matrix, pair_num, penalty);
-
 
 	if ( validation(score_matrix_cpu, score_matrix, pos_matrix[pair_num]) )
 		printf("Validation: PASS\n", 0);
@@ -505,7 +435,8 @@ void runTest( int argc, char** argv)
 	#endif
 
 	//	fclose(fpo);
-	//free(score_matrix);
-
+	free(score_matrix_cpu);
+	cudaFreeHost(score_matrix);
+	
 
 }

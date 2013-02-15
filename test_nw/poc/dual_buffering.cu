@@ -60,7 +60,7 @@ __global__ void dummy_function(int * array, unsigned int howlarge)
 void runTest()
 {
     double start, end, now;
-    unsigned int nints = 500 * 1024 * 1024;
+    unsigned int nints = 100 * 1024 * 1024;
     unsigned int sz = nints * sizeof(int);
 
 		unsigned int nints_small = 1 * 1024 * 1024;
@@ -70,7 +70,11 @@ void runTest()
 		printf ("Running on a 64-bit platform!\n", 0);
 		#else
 		#endif
-    
+
+
+		printf("Big Chunk of memory allocated on host & device = %d\n", sz / 1024 /1024);
+		printf("Small Chunk of memory allocated on host & device = %d\n", sz_small / 1024 /1024);
+		
     int * dummy_cpu, * dummy_cpu2, * dummy_small_cpu, * dummy_small_cpu2;
     cudaMallocHost( (void**) &dummy_cpu, sz );
     cudaMallocHost( (void**) &dummy_cpu2, sz );

@@ -15,7 +15,7 @@ void needleman_cpu(char *sequence_set1,
 				   unsigned int max_pair_no, 
 				   short penalty)
 {
-		for (int i=0; i<max_pair_no; ++i){
+		for (int i=0; i<max_pair_no; i++){
 			
 			char *seq1 = sequence_set1+pos1[i];
 			char *seq2 = sequence_set2+pos2[i];
