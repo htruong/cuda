@@ -38,8 +38,6 @@ struct needle_work {
 	short penalty;
 	unsigned int start;
 	unsigned int batch_size;
-	pthread_mutex_t * work_lock;
-	pthread_cond_t * work_free;
 };
 
 void dataInput( char *sequence_set1, 
@@ -49,8 +47,6 @@ void dataInput( char *sequence_set1,
 				unsigned int *pos_matrix,
 				int no_pair);
 
-
-bool gpu_free;
 
 
 #endif	//__NEEDLE_H__
