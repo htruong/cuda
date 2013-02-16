@@ -12,20 +12,21 @@ EXEDB = apitest_dualbuffering
 DEPENDS = needle_gpu
 DEPENDS2 = needle_cpu
 
-CFLAGS = -g -O3 -Xptxas=-v -I$(INCLUDE) -L$(CUDA_LIB_DIR) 
-DEBUGFLAGS = $(CFLAGS) -DVERBOSE 
-# -DDUAL_BUFFERING
-
+CFLAGS =  -O3 -DDUAL_BUFFERING -Xptxas=-v -I$(INCLUDE) -L$(CUDA_LIB_DIR) 
+DEBUGFLAGS = $(CFLAGS) -g -DVERBOSE 
+# 
 DEBUG_PREFIX = debug_
 
 %.o: %.cu
+	$(CC) $(CFLAGS) -c $<
+%_d.o: %.cu
 	$(CC) $(DEBUGFLAGS) -c $<
 
 release: $(SRC) $(DEPENDS).o $(DEPENDS2).o
 	$(CC) $(CFLAGS) $(SRC) -o $(EXE) $(DEPENDS).o $(DEPENDS2).o
 #	$(CC) $(CFLAGS) $(SRC) -o $(EXEDB) $(DEPENDS).o $(DEPENDS2).o
 
-debug: $(SRC) $(DEPENDS).o $(DEPENDS2).o
+debug: $(SRC) $(DEPENDS)_d.o $(DEPENDS2)_d.o
 	$(CC) $(DEBUGFLAGS) $(SRC) -o $(DEBUG_PREFIX)$(EXE) $(DEPENDS).o $(DEPENDS2).o
 #	$(CC) $(DEBUGFLAGS) $(SRC) -o $(DEBUG_PREFIX)$(EXEDB) $(DEPENDS).o $(DEPENDS2).o
 
