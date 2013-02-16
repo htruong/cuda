@@ -2,7 +2,7 @@
 #define BLOCK_SIZE 16
 #define MAX_SEQ_LEN 2100
 #define MAX_SEQ_NUM 1024
-#define LENGTH 1600
+#define LENGTH 1536
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -67,7 +67,7 @@ void usage(int argc, char **argv)
 }
 
 
-void memcpy_and_run (bool async,
+void memcpy_and_run (
 				unsigned int begin,
 				unsigned int end,
 				cudaStream_t * stream,
@@ -93,36 +93,37 @@ void memcpy_and_run (bool async,
 		start_marker = gettime();
 		printf("-- Start calculation from %d to %d --\n", begin, end);
 		#endif
-		if (async) {
-			cudaMemcpyAsync( d_sequence_set1, sequence_set1 + pos1[begin], sizeof(char)*(pos1[end] - pos1[begin]), cudaMemcpyHostToDevice, *stream);
-			cudaMemcpyAsync( d_sequence_set2, sequence_set2 + pos2[begin], sizeof(char)*(pos2[end] - pos2[begin]), cudaMemcpyHostToDevice, *stream);
-			cudaMemcpyAsync( d_pos1, pos1 /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice, *stream );
-			cudaMemcpyAsync( d_pos2, pos2 /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice, *stream );
-			cudaMemcpyAsync( d_pos_matrix, pos_matrix /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice, *stream );
-		} else {
-			cudaMemcpy( d_sequence_set1, sequence_set1 + pos1[begin], sizeof(char)*(pos1[end] - pos1[begin]), cudaMemcpyHostToDevice );
-			cudaMemcpy( d_sequence_set2, sequence_set2 + pos2[begin], sizeof(char)*(pos2[end] - pos2[begin]), cudaMemcpyHostToDevice );
-			cudaMemcpy( d_pos1, pos1 /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice );
-			cudaMemcpy( d_pos2, pos2 /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice );
-			cudaMemcpy( d_pos_matrix, pos_matrix /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice );
-		}
+
+		#ifdef DUAL_BUFFERING
+		cudaMemcpyAsync( d_sequence_set1, sequence_set1 + pos1[begin], sizeof(char)*(pos1[end] - pos1[begin]), cudaMemcpyHostToDevice, *stream);
+		cudaMemcpyAsync( d_sequence_set2, sequence_set2 + pos2[begin], sizeof(char)*(pos2[end] - pos2[begin]), cudaMemcpyHostToDevice, *stream);
+		cudaMemcpyAsync( d_pos1, pos1 /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice, *stream );
+		cudaMemcpyAsync( d_pos2, pos2 /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice, *stream );
+		cudaMemcpyAsync( d_pos_matrix, pos_matrix /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice, *stream );
+		#else
+		cudaMemcpy( d_sequence_set1, sequence_set1 + pos1[begin], sizeof(char)*(pos1[end] - pos1[begin]), cudaMemcpyHostToDevice );
+		cudaMemcpy( d_sequence_set2, sequence_set2 + pos2[begin], sizeof(char)*(pos2[end] - pos2[begin]), cudaMemcpyHostToDevice );
+		cudaMemcpy( d_pos1, pos1 /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice );
+		cudaMemcpy( d_pos2, pos2 /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice );
+		cudaMemcpy( d_pos_matrix, pos_matrix /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice );
+		#endif
 
 		#ifdef VERBOSE
 		printf("\t [%d - %d] Memcpy CPU-GPU: %f\n", begin, end, gettime() - start_marker);
 		start_marker = gettime();
 		#endif
 		
-		if (async) {
-			needleman_cuda_diagonal<<<batch_size,512, 0, *stream>>>(d_sequence_set1, d_sequence_set2,
-					d_pos1, d_pos2,
-					d_score_matrix, d_pos_matrix,
-					batch_size, penalty);
-		} else {
-			needleman_cuda_diagonal<<<batch_size,512>>>(d_sequence_set1, d_sequence_set2,
-					d_pos1, d_pos2,
-					d_score_matrix, d_pos_matrix,
-					batch_size, penalty);
-		}
+		#ifdef DUAL_BUFFERING
+		needleman_cuda_diagonal<<<batch_size,512, 0, *stream>>>(d_sequence_set1, d_sequence_set2,
+				d_pos1, d_pos2,
+				d_score_matrix, d_pos_matrix,
+				batch_size, penalty);
+		#else
+		needleman_cuda_diagonal<<<batch_size,512>>>(d_sequence_set1, d_sequence_set2,
+				d_pos1, d_pos2,
+				d_score_matrix, d_pos_matrix,
+				batch_size, penalty);
+		#endif
 		
 		cudaCheckError( __LINE__, cudaDeviceSynchronize() );
 		
@@ -130,25 +131,16 @@ void memcpy_and_run (bool async,
 		printf("\t [%d - %d] Kernel: %f\n", begin, end, gettime() - start_marker);
 		start_marker = gettime();
 		#endif
-		if (async) {
-			cudaMemcpyAsync( score_matrix + pos_matrix[begin], d_score_matrix, sizeof(int)*(pos_matrix[end] - pos_matrix[begin]), cudaMemcpyDeviceToHost, *stream );
-		} else {
-			cudaMemcpy( score_matrix + pos_matrix[begin], d_score_matrix, sizeof(int)*(pos_matrix[end] - pos_matrix[begin]), cudaMemcpyDeviceToHost );
-		}
+		
+		#ifdef DUAL_BUFFERING
+		cudaMemcpyAsync( score_matrix + pos_matrix[begin], d_score_matrix, sizeof(int)*(pos_matrix[end] - pos_matrix[begin]), cudaMemcpyDeviceToHost, *stream );
+		#else
+		cudaMemcpy( score_matrix + pos_matrix[begin], d_score_matrix, sizeof(int)*(pos_matrix[end] - pos_matrix[begin]), cudaMemcpyDeviceToHost );
+		#endif
+		
 		#ifdef VERBOSE
 		printf("\t [%d - %d] Memcpy GPU-CPU: %f\n", begin, end, gettime() - start_marker);
 		#endif
-}
-
-void needleman_gpu_sync(char *sequence_set1,
-				char *sequence_set2,
-				unsigned int *pos1,
-				unsigned int *pos2,
-				int *score_matrix,
-				unsigned int *pos_matrix,
-				unsigned int max_pair_no,
-				short penalty)
-{
 }
 
 void needleman_gpu(char *sequence_set1,
@@ -175,8 +167,17 @@ void needleman_gpu(char *sequence_set1,
 					+ sizeof(int)*(LENGTH+1)*(LENGTH+1)
 					+ sizeof(unsigned int)*3;
 	unsigned int batch_size = freeMem * 0.75 / eachSeqMem; // Safety reasons...
-	unsigned int half_b = batch_size / 2;
-	unsigned int other_half_b = batch_size - half_b;
+	unsigned int half_b, other_half_b;
+	cudaStream_t stream1, stream2;
+	
+	#ifdef DUAL_BUFFERING
+	half_b = batch_size / 2;
+	other_half_b = batch_size - half_b;
+    cudaStreamCreate(&stream1);
+    cudaStreamCreate(&stream2);
+	#else
+	half_b = batch_size;
+	#endif
 
 	printf("Each batch will be doing this many pairs: %d\n", batch_size);
 
@@ -188,30 +189,28 @@ void needleman_gpu(char *sequence_set1,
 	char *d_sequence_set1_h1, *d_sequence_set2_h1, *d_sequence_set1_h2, *d_sequence_set2_h2;
 	unsigned int *d_pos1_h1, *d_pos2_h1, *d_pos_matrix_h1, *d_pos1_h2, *d_pos2_h2, *d_pos_matrix_h2;
 	int *d_score_matrix_h1, *d_score_matrix_h2;
-	
-	cudaStream_t stream1;
-    cudaStreamCreate(&stream1);
-    cudaStream_t stream2;
-    cudaStreamCreate(&stream2);
-    
+
 	start_marker = gettime();
 	// Allocating memory for both halves
 	
 	// First half
-	cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set1_h1, sizeof(char)*(pos1[1]*half_b) ));
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set2_h1, sizeof(char)*(pos1[1]*half_b)) );
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_score_matrix_h1, sizeof(int)*(pos_matrix[1]*half_b)) );
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos1_h1, sizeof(unsigned int)*(half_b+1) ) );
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos2_h1, sizeof(unsigned int)*(half_b+1) ) );
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos_matrix_h1, sizeof(unsigned int)*(half_b+1) ) );
+	cudaMalloc( (void**)&d_sequence_set1_h1, sizeof(char)*(pos1[1]*half_b) );
+    cudaMalloc( (void**)&d_sequence_set2_h1, sizeof(char)*(pos1[1]*half_b)) ;
+    cudaMalloc( (void**)&d_score_matrix_h1, sizeof(int)*(pos_matrix[1]*half_b)) ;
+    cudaMalloc( (void**)&d_pos1_h1, sizeof(unsigned int)*(half_b+1) ) ;
+    cudaMalloc( (void**)&d_pos2_h1, sizeof(unsigned int)*(half_b+1) ) ;
+    cudaMalloc( (void**)&d_pos_matrix_h1, sizeof(unsigned int)*(half_b+1) ) ;
 
+    #ifdef DUAL_BUFFERING
     // Second half
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set1_h2, sizeof(char)*(pos1[1]*other_half_b) ));
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_sequence_set2_h2, sizeof(char)*(pos2[1]*other_half_b)) );
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_score_matrix_h2, sizeof(int)*(pos_matrix[1]*other_half_b)) );
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos1_h2, sizeof(unsigned int)*(other_half_b+1) ) );
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos2_h2, sizeof(unsigned int)*(other_half_b+1) ) );
-    cudaCheckError( __LINE__, cudaMalloc( (void**)&d_pos_matrix_h2, sizeof(unsigned int)*(other_half_b+1) ) );
+    cudaMalloc( (void**)&d_sequence_set1_h2, sizeof(char)*(pos1[1]*other_half_b) );
+    cudaMalloc( (void**)&d_sequence_set2_h2, sizeof(char)*(pos2[1]*other_half_b)) ;
+    cudaMalloc( (void**)&d_score_matrix_h2, sizeof(int)*(pos_matrix[1]*other_half_b)) ;
+    cudaMalloc( (void**)&d_pos1_h2, sizeof(unsigned int)*(other_half_b+1) );
+    cudaMalloc( (void**)&d_pos2_h2, sizeof(unsigned int)*(other_half_b+1) ) ;
+    cudaMalloc( (void**)&d_pos_matrix_h2, sizeof(unsigned int)*(other_half_b+1) ) ;
+	#endif
+
     
 	fprintf(stdout,"cudaMalloc = %f\n", gettime()-start_marker);
 	
@@ -229,7 +228,7 @@ void needleman_gpu(char *sequence_set1,
 			end = start + tmp_batch_sz;
 		}
 		
-		memcpy_and_run (true,
+		memcpy_and_run (
 			start,
 			end,
 			turn ? &stream1 : &stream2 ,
@@ -248,24 +247,30 @@ void needleman_gpu(char *sequence_set1,
 			penalty);
 				
 		start = end;
+		#ifdef DUAL_BUFFERING
 		turn = !turn;
+		#endif
 	}
 	cudaDeviceSynchronize();
 	
 	cudaFree(d_sequence_set1_h1);
-	cudaFree(d_sequence_set1_h2);
 	cudaFree(d_sequence_set2_h1);
-	cudaFree(d_sequence_set2_h2);
 	cudaFree(d_pos1_h1);
-	cudaFree(d_pos1_h2);
-	cudaFree(d_pos2_h2);
 	cudaFree(d_pos2_h2);
 	cudaFree(d_pos_matrix_h1);
-	cudaFree(d_pos_matrix_h2);
 	cudaFree(d_score_matrix_h1);
+
+	#ifdef DUAL_BUFFERING
+	cudaFree(d_sequence_set1_h2);
+	cudaFree(d_sequence_set2_h2);
+	cudaFree(d_pos1_h2);
+	cudaFree(d_pos2_h2);
+	cudaFree(d_pos_matrix_h2);
 	cudaFree(d_score_matrix_h2);
+
 	cudaStreamDestroy(stream1);
 	cudaStreamDestroy(stream2);
+	#endif
 }
 
 
@@ -350,8 +355,11 @@ void runTest( int argc, char** argv)
 	// We need to free the score matrix for the cpu to prevent biasness against the scoring for the GPU calc
 	free(score_matrix_cpu);
 	
+	#ifdef DUAL_BUFFERING
 	cudaMallocHost((void **) &score_matrix, pos_matrix[pair_num]*sizeof(int));
-	//score_matrix = (int *)malloc(pos_matrix[pair_num]*sizeof(int));
+	#else
+	score_matrix = (int *)malloc(pos_matrix[pair_num]*sizeof(int));
+	#endif
 
 	time = gettime();
 	needleman_gpu(sequence_set1, sequence_set2, pos1, pos2, score_matrix, pos_matrix, pair_num, penalty);
@@ -373,67 +381,6 @@ void runTest( int argc, char** argv)
 
 	cudaDeviceReset();
 	
-	#ifdef TRACEBACK
-		printf("Here comes the result of the first pair...\n", 0);
-		int seq1_begin = pos1[0];
-		int seq1_end = pos1[1];
-		int seq2_begin = pos2[0];
-		int seq2_end = pos2[1];
-		int *current_matrix = score_matrix + pos_matrix[0];
-		printf("1st seq len = %d =\n%.*s\n", seq1_end - seq1_begin, seq1_end - seq1_begin, sequence_set1 + seq1_begin);
-		printf("2nd seq len = %d =\n%.*s\n", seq2_end - seq2_begin, seq2_end - seq2_begin, sequence_set2 + seq2_begin);
-		printf("traceback = \n", 0);
-		bool done = false;
-		int current_pos = ((seq1_end - seq1_begin)+1) * ((seq2_end - seq2_begin)+1) -1; // start at the last cell of the matrix
-
-		// Fix LENGTH, so that it takes more than just square... this is not important
-		for (int i = 0; i < LENGTH + 1; i++) {
-			for (int j = 0; j < LENGTH + 1; j++) {
-				int dir = current_matrix[i*(LENGTH+1)+j];
-				if ((dir & 0x03) == TRACE_UL) {
-					printf("\\", 0);
-				} else if ((dir & 0x03) == TRACE_U) {
-					printf("^", 0);
-				} else if ((dir & 0x03) == TRACE_L) {
-					printf("<", 0);
-				} else {
-					printf("-", 0);
-				}
-			}
-			printf("\n", 0);
-		}
-
-		// Fix LENGTH, so that it takes more than just square... this is not important
-		for (int i = 0; i < LENGTH + 1; i++) {
-			for (int j = 0; j < LENGTH + 1; j++) {
-				int dir = current_matrix[i*(LENGTH+1)+j] >> 2;
-				printf("%4d ", dir);
-			}
-			printf("\n", 0);
-		}
-
-		printf("Actual traceback:\n", 0);
-		while (!done) {
-			int dir = current_matrix[current_pos];
-//			printf("current_pos = %d, dir = %x, score = %d\n", current_pos, dir & 0x03, dir >> 2);
-
-			if ((dir & 0x03) == TRACE_UL) {
-				printf("\\", 0);
-				current_pos = current_pos - (seq1_end - seq1_begin + 1) - 1;
-			} else if ((dir & 0x03) == TRACE_U) {
-				printf("^", 0);
-				current_pos = current_pos - (seq1_end - seq1_begin + 1);
-			} else if ((dir & 0x03) == TRACE_L) {
-				printf("<", 0);
-				current_pos = current_pos - 1;
-			} else {
-				printf("*", 0);
-				done = true;
-			}
-		}
-		printf("traceback done!\n", 0);
-	#endif
-
 	//	fclose(fpo);
 	free(score_matrix_cpu);
 	cudaFreeHost(score_matrix);
