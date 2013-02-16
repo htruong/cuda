@@ -70,10 +70,15 @@ void memcpy_and_run (
 		cudaMemcpyAsync( d_pos2, pos2 /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice, *stream );
 		cudaMemcpyAsync( d_pos_matrix, pos_matrix /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice, *stream );
 		#else
+		//printf("-- Start calculation from %d to %d cp1 --\n", begin, end); 
 		cudaMemcpy( d_sequence_set1, sequence_set1 + pos1[begin], sizeof(char)*(pos1[end] - pos1[begin]), cudaMemcpyHostToDevice );
+		//printf("-- Start calculation from %d to %d cp2 --\n", begin, end);
 		cudaMemcpy( d_sequence_set2, sequence_set2 + pos2[begin], sizeof(char)*(pos2[end] - pos2[begin]), cudaMemcpyHostToDevice );
+		//printf("-- Start calculation from %d to %d cp3 --\n", begin, end);
 		cudaMemcpy( d_pos1, pos1 /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice );
+		//printf("-- Start calculation from %d to %d cp4 --\n", begin, end);
 		cudaMemcpy( d_pos2, pos2 /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice );
+		//printf("-- Start calculation from %d to %d cp5 --\n", begin, end);
 		cudaMemcpy( d_pos_matrix, pos_matrix /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice );
 		#endif
 
@@ -206,7 +211,7 @@ void * needle_init(
 	unsigned int eachSeqMem = sizeof(char)*max_length_per_seq*2
 					+ sizeof(int)*(max_length_per_seq+1)*(max_length_per_seq+1)
 					+ sizeof(unsigned int)*3;
-	unsigned int batch_size = freeMem * 0.75 / eachSeqMem; // Safety reasons...
+	unsigned int batch_size = freeMem * 0.6 / eachSeqMem; // Safety reasons...
 	
 	cudaStream_t * stream1 = new cudaStream_t;
 	cudaStream_t * stream2 = new cudaStream_t;
@@ -236,7 +241,7 @@ void * needle_init(
 	// Allocating memory for both halves
 
 	// First half
-	cudaMalloc( (void**)&d_sequence_set1_h1, sizeof(char)*(pos1[1]*half_b) );
+	  cudaMalloc( (void**)&d_sequence_set1_h1, sizeof(char)*(pos1[1]*half_b) );
     cudaMalloc( (void**)&d_sequence_set2_h1, sizeof(char)*(pos1[1]*half_b)) ;
     cudaMalloc( (void**)&d_score_matrix_h1, sizeof(int)*(pos_matrix[1]*half_b)) ;
     cudaMalloc( (void**)&d_pos1_h1, sizeof(unsigned int)*(half_b+1) ) ;
@@ -263,6 +268,7 @@ void * needle_init(
 	struct needle_context * internal_ctx = new needle_context;
 	internal_ctx->gpu_num = gpu_num;
 	internal_ctx->sequence_set1 = sequence_set1;
+	internal_ctx->sequence_set2 = sequence_set2;
 	internal_ctx->pos1 = pos1;
 	internal_ctx->pos2 = pos2;
 	internal_ctx->score_matrix = score_matrix;
@@ -294,7 +300,7 @@ void needle_align(void * needle_ctx, int num_pairs) {
 	////////////////////////////////////////////////////////////////////////////
 	// WARNING BOILERPLATE CODE !
 
-	struct needle_context *internal_ctx = static_cast<struct needle_context *>(needle_ctx);
+	struct needle_context *internal_ctx = (needle_context *) needle_ctx;
 
 	needleman_gpu(
 		internal_ctx->sequence_set1,

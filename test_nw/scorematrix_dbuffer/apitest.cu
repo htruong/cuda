@@ -166,13 +166,12 @@ void runTest( int argc, char** argv)
 	else
 		printf("Validation: FAIL\n", 0);
 
-	cudaDeviceReset();
 
 	//	fclose(fpo);
 	free(score_matrix_cpu);
 	cudaFreeHost(score_matrix);
 
-
+	cudaDeviceReset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
