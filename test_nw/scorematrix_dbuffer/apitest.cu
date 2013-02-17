@@ -1,4 +1,4 @@
-#define MAX_SEQ_NUM 1024
+#define MAX_SEQ_NUM 2048
 #define MAX_SEQ_LEN 2100
 #define LENGTH 1536
 
