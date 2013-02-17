@@ -243,7 +243,7 @@ void * needle_prepare(
 	unsigned int eachSeqMem = sizeof(char)*max_length_per_seq*2
 					+ sizeof(int)*(max_length_per_seq+1)*(max_length_per_seq+1)
 					+ sizeof(unsigned int)*3;
-	unsigned int batch_size = freeMem * 0.7 / eachSeqMem; // Safety reasons...
+	unsigned int batch_size = totalMem * 0.7 / eachSeqMem; // Safety reasons...
 
 	cudaStream_t * stream1 = new cudaStream_t;
 	cudaStream_t * stream2 = new cudaStream_t;

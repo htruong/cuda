@@ -45,7 +45,7 @@ int validation(int *score_matrix_cpu, int *score_matrix, unsigned int length)
 
 void runTest(int argc, char** argv)
 {
-	double time, end_time;
+	double time, end_time, cpu_time, gpu_time;
 	int comparison_count;
 	short penalty;
 	char sequence_set1[MAX_SEQ_LEN*MAX_SEQ_NUM] = {0}, sequence_set2[MAX_SEQ_LEN*MAX_SEQ_NUM] = {0};
@@ -54,6 +54,7 @@ void runTest(int argc, char** argv)
 	int *score_matrix_cpu;
 	int seq1_len, seq2_len;
 	void * ctx;
+	
 
 	char * gpu_name = (char *) malloc(256);
 	unsigned int optimal_batch_size;
@@ -118,7 +119,8 @@ void runTest(int argc, char** argv)
 
 	// CPU phases
 	end_time = get_time();
-	fprintf(stdout,"CPU calc: %f\n",end_time-time);
+	cpu_time = end_time-time;
+	//fprintf(stdout,"CPU calc: %f\n",end_time-time);
 	// We need to free the score matrix for the cpu to prevent biasness against the scoring for the GPU calc
 	free(score_matrix_cpu);
 
@@ -129,8 +131,6 @@ void runTest(int argc, char** argv)
 	#else
 	score_matrix = (int *)malloc(pos_matrix[comparison_count]*sizeof(int));
 	#endif
-
-	
 
 	needle_allocate(
 		ctx,
@@ -148,7 +148,8 @@ void runTest(int argc, char** argv)
 	time = get_time();
 	needle_align(ctx, comparison_count);
 	end_time = get_time();
-	fprintf(stdout,"GPU calc: %f\n",end_time-time);
+	gpu_time = end_time-time;
+	fprintf(stdout,"__CSV_ALL__,%s,%d,%d,%f,%f\n",gpu_name,optimal_batch_size,atoi(argv[1]),cpu_time,gpu_time);
 
 	// ---- Finalize ---
 	time = get_time();
@@ -159,6 +160,7 @@ void runTest(int argc, char** argv)
 
 	/* NOTE --- ACTUAL CUDA API CODE ENDS HERE --- */
 
+	#ifdef VERIFY
 	
 	/////////////////
 	fprintf(stdout,"Recalculating the score matrix to verify correctness...\n",0);
@@ -170,11 +172,11 @@ void runTest(int argc, char** argv)
 		printf("Validation: PASS\n", 0);
 	else
 		printf("Validation: FAIL\n", 0);
-
+	free(score_matrix_cpu);
+	#endif
 
 	//	fclose(fpo);
 	delete gpu_name;
-	free(score_matrix_cpu);
 	cudaFreeHost(score_matrix);
 
 	cudaDeviceReset();
