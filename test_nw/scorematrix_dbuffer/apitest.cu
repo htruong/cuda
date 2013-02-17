@@ -3,6 +3,10 @@
 #define LENGTH 1536
 
 
+#ifndef GPUINDEX
+#define GPUINDEX 0
+#endif
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -124,7 +128,7 @@ void runTest( int argc, char** argv)
 	
 	time = get_time();
 	ctx = needle_init(
-		0, // GPU number I should work on
+		GPUINDEX, // GPU number I should work on
 		LENGTH, // Max length per sequence
 		sequence_set1, // Pointer to sequence set 1
 		sequence_set2, // Pointer to sequence set 2
