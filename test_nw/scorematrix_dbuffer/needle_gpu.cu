@@ -27,7 +27,20 @@ struct needle_context {
 	int *d_score_matrix_h1, *d_score_matrix_h2;
 	cudaStream_t *stream1, *stream2;
 	unsigned int half_b, other_half_b, max_length_per_seq;
+  double total_kernel_time, total_memtransfer_time, total_memtransfer_initial_time;
 };
+
+int check_mappable_host ( cudaDeviceProp * p )
+{
+	int support = p->canMapHostMemory;
+	if(support == 0) {
+		printf("%s does not support mapping host memory.\n", p->name);
+	} else {
+		printf("%s supports mapping host memory.\n",p->name);
+	}
+	return support;
+}
+
 
 double gettime(){
 	struct timeval t;
@@ -37,6 +50,7 @@ double gettime(){
 
 
 void memcpy_and_run (
+				needle_context * ctx,
 				unsigned int begin,
 				unsigned int end,
 				cudaStream_t * stream,
@@ -57,9 +71,10 @@ void memcpy_and_run (
 		unsigned int batch_size = end-begin;
 		// Memcpy to device
 
-		#ifdef VERBOSE
 		double start_marker = 0;
 		start_marker = gettime();
+
+		#ifdef VERBOSE
 		printf("-- Start calculation from %d to %d --\n", begin, end);
 		#endif
 
@@ -82,10 +97,13 @@ void memcpy_and_run (
 		cudaMemcpy( d_pos_matrix, pos_matrix /*+ begin*/, sizeof(unsigned int)*(batch_size+1), cudaMemcpyHostToDevice );
 		#endif
 
+		ctx->total_memtransfer_initial_time += gettime() - start_marker;
+
 		#ifdef VERBOSE
 		printf("\t [%d - %d] Memcpy CPU-GPU: %f\n", begin, end, gettime() - start_marker);
-		start_marker = gettime();
 		#endif
+
+		start_marker = gettime();
 		
 		#ifdef DUAL_BUFFERING
 		needleman_cuda_diagonal<<<batch_size,512, 0, *stream>>>(d_sequence_set1, d_sequence_set2,
@@ -99,22 +117,29 @@ void memcpy_and_run (
 				batch_size, penalty);
 		#endif
 		
-		__LINE__, cudaDeviceSynchronize();
+		cudaDeviceSynchronize();
+
+		ctx->total_kernel_time += gettime() - start_marker;
 		
 		#ifdef VERBOSE
 		printf("\t [%d - %d] Kernel: %f\n", begin, end, gettime() - start_marker);
-		start_marker = gettime();
 		#endif
-		
+
+		start_marker = gettime();
+
+	  	
 		#ifdef DUAL_BUFFERING
 		cudaMemcpyAsync( score_matrix + pos_matrix[begin], d_score_matrix, sizeof(int)*(pos_matrix[end] - pos_matrix[begin]), cudaMemcpyDeviceToHost, *stream );
 		#else
 		cudaMemcpy( score_matrix + pos_matrix[begin], d_score_matrix, sizeof(int)*(pos_matrix[end] - pos_matrix[begin]), cudaMemcpyDeviceToHost );
 		#endif
-		
+
+		ctx->total_memtransfer_time += gettime() - start_marker;
+
 		#ifdef VERBOSE
 		printf("\t [%d - %d] Memcpy GPU-CPU: %f\n", begin, end, gettime() - start_marker);
 		#endif
+		
 }
 
 void needleman_gpu(char *sequence_set1,
@@ -157,6 +182,7 @@ void needleman_gpu(char *sequence_set1,
 		}
 		
 		memcpy_and_run (
+			ctx,
 			start,
 			end,
 			turn ? stream1 : stream2 ,
@@ -180,7 +206,9 @@ void needleman_gpu(char *sequence_set1,
 		#endif
 	}
 	cudaDeviceSynchronize();
-	
+		printf("Total memcpy host-to-device time = %f\n", ctx->total_memtransfer_initial_time);
+		printf("Total kernel time = %f\n", ctx->total_kernel_time);
+		printf("Total memcpy device-to-host time = %f\n", ctx->total_memtransfer_time);
 }
 
 void * needle_init(
@@ -203,6 +231,10 @@ void * needle_init(
 	// First we need to see how to devide the memory...
 	// Query the device capabilities to see how much we can allocate for this problem
 
+	cudaDeviceProp prop;
+	cudaGetDeviceProperties(&prop, gpu_num);
+	check_mappable_host (&prop);
+	
 	size_t freeMem = 0;
 	size_t totalMem = 0;
 	cudaMemGetInfo(&freeMem, &totalMem);
@@ -211,7 +243,7 @@ void * needle_init(
 	unsigned int eachSeqMem = sizeof(char)*max_length_per_seq*2
 					+ sizeof(int)*(max_length_per_seq+1)*(max_length_per_seq+1)
 					+ sizeof(unsigned int)*3;
-	unsigned int batch_size = freeMem * 0.6 / eachSeqMem; // Safety reasons...
+	unsigned int batch_size = freeMem * 0.8 / eachSeqMem; // Safety reasons...
 	
 	cudaStream_t * stream1 = new cudaStream_t;
 	cudaStream_t * stream2 = new cudaStream_t;
@@ -244,6 +276,8 @@ void * needle_init(
 	  cudaMalloc( (void**)&d_sequence_set1_h1, sizeof(char)*(pos1[1]*half_b) );
     cudaMalloc( (void**)&d_sequence_set2_h1, sizeof(char)*(pos1[1]*half_b)) ;
     cudaMalloc( (void**)&d_score_matrix_h1, sizeof(int)*(pos_matrix[1]*half_b)) ;
+    //cudaMalloc( (void**)&d_score_matrix_h1, sizeof(int)*(pos_matrix[1]*half_b)) ;
+		//cudaHostGetDevicePointer( (void**)&d_score_matrix_h1, (void *) score_matrix, 0);
     cudaMalloc( (void**)&d_pos1_h1, sizeof(unsigned int)*(half_b+1) ) ;
     cudaMalloc( (void**)&d_pos2_h1, sizeof(unsigned int)*(half_b+1) ) ;
     cudaMalloc( (void**)&d_pos_matrix_h1, sizeof(unsigned int)*(half_b+1) ) ;
@@ -253,6 +287,8 @@ void * needle_init(
     cudaMalloc( (void**)&d_sequence_set1_h2, sizeof(char)*(pos1[1]*other_half_b) );
     cudaMalloc( (void**)&d_sequence_set2_h2, sizeof(char)*(pos2[1]*other_half_b)) ;
     cudaMalloc( (void**)&d_score_matrix_h2, sizeof(int)*(pos_matrix[1]*other_half_b)) ;
+    //cudaMalloc( (void**)&d_score_matrix_h2, sizeof(int)*(pos_matrix[1]*other_half_b)) ;
+		//cudaHostGetDevicePointer( (void**)&d_score_matrix_h2, (void *) (score_matrix + pos_matrix[half_b]), 0);
     cudaMalloc( (void**)&d_pos1_h2, sizeof(unsigned int)*(other_half_b+1) );
     cudaMalloc( (void**)&d_pos2_h2, sizeof(unsigned int)*(other_half_b+1) ) ;
     cudaMalloc( (void**)&d_pos_matrix_h2, sizeof(unsigned int)*(other_half_b+1) ) ;
@@ -290,7 +326,11 @@ void * needle_init(
 	internal_ctx->stream2 = stream2;
 	internal_ctx->half_b = half_b;
 	internal_ctx->other_half_b = other_half_b;
-	
+  internal_ctx->total_kernel_time = 0;
+	internal_ctx->total_memtransfer_time = 0;
+	internal_ctx->total_memtransfer_initial_time = 0;
+
+
 	printf("-- NEEDLEMAN MODULE INITIALIZING DONE --\n", 0);
 	
 	return (void *) internal_ctx;

@@ -6,28 +6,25 @@ INCLUDE := $(CUDA_DIR)/include -I ./
 
 SRC = apitest.cu
 
-EXE = apitest
-EXEDB = apitest_dualbuffering
+EXE = apitest_$(EXTRASUFFIX)
 
 DEPENDS = needle_gpu
 DEPENDS2 = needle_cpu
 
-CFLAGS = -g -O3 -Xptxas=-v -I$(INCLUDE) -L$(CUDA_LIB_DIR) 
-DEBUGFLAGS = $(CFLAGS) -DVERBOSE 
-# -DDUAL_BUFFERING
+CFLAGS = $(EXTRAFLAGS) -O3 -Xptxas=-v -I$(INCLUDE) -L$(CUDA_LIB_DIR) 
+DEBUGFLAGS = -g $(CFLAGS) -DVERBOSE 
+# -DDUAL_BUFFERING -DUSE_PINNED_MEM
 
 DEBUG_PREFIX = debug_
 
 %.o: %.cu
-	$(CC) $(DEBUGFLAGS) -c $<
+	$(CC) $(CFLAGS) -c $<
 
 release: $(SRC) $(DEPENDS).o $(DEPENDS2).o
 	$(CC) $(CFLAGS) $(SRC) -o $(EXE) $(DEPENDS).o $(DEPENDS2).o
-#	$(CC) $(CFLAGS) $(SRC) -o $(EXEDB) $(DEPENDS).o $(DEPENDS2).o
 
 debug: $(SRC) $(DEPENDS).o $(DEPENDS2).o
 	$(CC) $(DEBUGFLAGS) $(SRC) -o $(DEBUG_PREFIX)$(EXE) $(DEPENDS).o $(DEPENDS2).o
-#	$(CC) $(DEBUGFLAGS) $(SRC) -o $(DEBUG_PREFIX)$(EXEDB) $(DEPENDS).o $(DEPENDS2).o
 
 enum: $(SRC)
 	$(CC) -deviceemu $(SRC) -o $(EXE) -I$(INCLUDE) -L$(CUDA_LIB_DIR)

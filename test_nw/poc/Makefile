@@ -4,9 +4,9 @@ CC := $(CUDA_DIR)/bin/nvcc
 
 INCLUDE := $(CUDA_DIR)/include -I ./
 
-SRC = needle.cu
+SRC = poc.cu
 
-EXE = needle
+EXE = poc
 
 release: $(SRC)
 	$(CC) -arch=sm_20 $(SRC) -O3 -o $(EXE) -I$(INCLUDE) -L$(CUDA_LIB_DIR) -Xptxas=-v -lpthread

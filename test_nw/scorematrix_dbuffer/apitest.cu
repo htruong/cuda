@@ -14,7 +14,6 @@
 #include "needle_cpu.h"
 
 
-
 void usage(int argc, char **argv)
 {
 	fprintf(stderr, "Usage: %s <pairs count> <penalty> \n", argv[0]);
@@ -115,7 +114,7 @@ void runTest( int argc, char** argv)
 
 	/* NOTE --- ACTUAL CUDA API CODE BEGINS HERE --- */
 	
-	#ifdef DUAL_BUFFERING
+	#ifdef USE_PINNED_MEM
 	cudaMallocHost((void **) &score_matrix, pos_matrix[pair_num]*sizeof(int));
 	#else
 	score_matrix = (int *)malloc(pos_matrix[pair_num]*sizeof(int));
