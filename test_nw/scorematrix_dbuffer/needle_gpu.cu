@@ -27,7 +27,9 @@ struct needle_context {
 	int *d_score_matrix_h1, *d_score_matrix_h2;
 	cudaStream_t *stream1, *stream2;
 	unsigned int half_b, other_half_b, max_length_per_seq;
-  double total_kernel_time, total_memtransfer_time, total_memtransfer_initial_time;
+	double total_kernel_time, total_memtransfer_time, total_memtransfer_initial_time;
+	char * gpu_name;
+	unsigned int optimal_batch_size;
 };
 
 int check_mappable_host ( cudaDeviceProp * p )
@@ -174,7 +176,7 @@ void needleman_gpu(char *sequence_set1,
 	bool turn = true;
 	while (!done) {
 		int tmp_batch_sz = turn ? ctx->half_b : ctx->other_half_b;
-		if (start + tmp_batch_sz > max_pair_no) {
+		if (start + tmp_batch_sz >= max_pair_no) {
 			end = max_pair_no;
 			done = true;
 		} else {
@@ -206,35 +208,33 @@ void needleman_gpu(char *sequence_set1,
 		#endif
 	}
 	cudaDeviceSynchronize();
-		printf("Total memcpy host-to-device time = %f\n", ctx->total_memtransfer_initial_time);
-		printf("Total kernel time = %f\n", ctx->total_kernel_time);
-		printf("Total memcpy device-to-host time = %f\n", ctx->total_memtransfer_time);
+	
+	printf("__CSV__,%s,%d,%f,%f,%f\n",
+		ctx->gpu_name,
+		ctx->optimal_batch_size,
+		ctx->total_memtransfer_initial_time,
+		ctx->total_kernel_time,
+		ctx->total_memtransfer_time);
 }
 
-void * needle_init(
+void * needle_prepare(
 	const int gpu_num,
 	unsigned int max_length_per_seq,
-	char *sequence_set1,
-	char *sequence_set2,
-	unsigned int *pos1,
-	unsigned int *pos2,
-	int *score_matrix, 
-	unsigned int *pos_matrix
+	unsigned int * optimal_batch_size,
+	char * gpu_name
 	)
 {
-	printf("-- NEEDLEMAN MODULE INITIALIZING --\n", 0);
-	
+	printf("NEEDLEMAN MODULE PREPPING CPU...\n", 0);
 	cudaSetDevice(gpu_num);
 	
-	double start_marker; // Start time marker
-
-	// First we need to see how to devide the memory...
-	// Query the device capabilities to see how much we can allocate for this problem
-
-	cudaDeviceProp prop;
-	cudaGetDeviceProperties(&prop, gpu_num);
-	check_mappable_host (&prop);
+	cudaDeviceProp * prop = new cudaDeviceProp;
+	cudaGetDeviceProperties(prop, gpu_num);
+	check_mappable_host (prop);
 	
+	strncpy (gpu_name, prop->name, 256);
+
+	delete prop;
+
 	size_t freeMem = 0;
 	size_t totalMem = 0;
 	cudaMemGetInfo(&freeMem, &totalMem);
@@ -243,8 +243,8 @@ void * needle_init(
 	unsigned int eachSeqMem = sizeof(char)*max_length_per_seq*2
 					+ sizeof(int)*(max_length_per_seq+1)*(max_length_per_seq+1)
 					+ sizeof(unsigned int)*3;
-	unsigned int batch_size = freeMem * 0.8 / eachSeqMem; // Safety reasons...
-	
+	unsigned int batch_size = freeMem * 0.7 / eachSeqMem; // Safety reasons...
+
 	cudaStream_t * stream1 = new cudaStream_t;
 	cudaStream_t * stream2 = new cudaStream_t;
 
@@ -259,7 +259,41 @@ void * needle_init(
 	#endif
 
 	printf("Each batch will be doing this many pairs: %d\n", batch_size);
+	* optimal_batch_size = batch_size;
+	
+	struct needle_context * internal_ctx = new needle_context;
+	
+	internal_ctx->gpu_num = gpu_num;
+	internal_ctx->half_b = half_b;
+	internal_ctx->other_half_b = other_half_b;
+	internal_ctx->gpu_name = (char *) malloc(256);
+	strncpy (internal_ctx->gpu_name, gpu_name, 256);
+	internal_ctx->stream1 = stream1;
+	internal_ctx->stream2 = stream2;
+	internal_ctx->optimal_batch_size = * optimal_batch_size;
+	
+	return (void *) internal_ctx;
+}
 
+void needle_allocate(
+    void *ctx,
+	char *sequence_set1,
+	char *sequence_set2,
+	unsigned int *pos1,
+	unsigned int *pos2,
+	int *score_matrix, 
+	unsigned int *pos_matrix
+	)
+{
+	double start_marker; // Start time marker
+	
+	struct needle_context *internal_ctx = (needle_context *) ctx;
+	
+	unsigned int half_b, other_half_b;
+	half_b = internal_ctx->half_b;
+	other_half_b = internal_ctx->other_half_b;
+	// First we need to see how to devide the memory...
+	// Query the device capabilities to see how much we can allocate for this problem
 	////////////////////////////////////////////////////////////////////////////
 
 	// This implementation comes with the free assumption that 
@@ -301,8 +335,6 @@ void * needle_init(
 	// WARNING BOILERPLATE CODE !
 	// Jesus, why I'm doing this? - Huan.
 
-	struct needle_context * internal_ctx = new needle_context;
-	internal_ctx->gpu_num = gpu_num;
 	internal_ctx->sequence_set1 = sequence_set1;
 	internal_ctx->sequence_set2 = sequence_set2;
 	internal_ctx->pos1 = pos1;
@@ -322,25 +354,20 @@ void * needle_init(
 	internal_ctx->d_score_matrix_h1 = d_score_matrix_h1;
 	internal_ctx->d_score_matrix_h2 = d_score_matrix_h2;
 	internal_ctx->penalty = -10;
-	internal_ctx->stream1 = stream1;
-	internal_ctx->stream2 = stream2;
-	internal_ctx->half_b = half_b;
-	internal_ctx->other_half_b = other_half_b;
-  internal_ctx->total_kernel_time = 0;
+	internal_ctx->total_kernel_time = 0;
 	internal_ctx->total_memtransfer_time = 0;
 	internal_ctx->total_memtransfer_initial_time = 0;
 
 
 	printf("-- NEEDLEMAN MODULE INITIALIZING DONE --\n", 0);
 	
-	return (void *) internal_ctx;
 }
 
-void needle_align(void * needle_ctx, int num_pairs) {
+void needle_align(void * ctx, int num_pairs) {
 	////////////////////////////////////////////////////////////////////////////
 	// WARNING BOILERPLATE CODE !
 
-	struct needle_context *internal_ctx = (needle_context *) needle_ctx;
+	struct needle_context *internal_ctx = (needle_context *) ctx;
 
 	needleman_gpu(
 		internal_ctx->sequence_set1,
@@ -370,10 +397,11 @@ void needle_align(void * needle_ctx, int num_pairs) {
 }
 
 
-void needle_finalize(void * needle_ctx)
+void needle_finalize(void * ctx)
 {
-	struct needle_context *internal_ctx = static_cast<struct needle_context *>(needle_ctx);
+	struct needle_context *internal_ctx = static_cast<struct needle_context *>(ctx);
 
+	
 	cudaFree(internal_ctx->d_sequence_set1_h1);
 	cudaFree(internal_ctx->d_sequence_set2_h1);
 	cudaFree(internal_ctx->d_pos1_h1);
@@ -393,6 +421,8 @@ void needle_finalize(void * needle_ctx)
 	cudaStreamDestroy(*(internal_ctx->stream2));
 	#endif
 
+
+	delete internal_ctx->gpu_name;
 	delete internal_ctx->stream1;
 	delete internal_ctx->stream2;
 

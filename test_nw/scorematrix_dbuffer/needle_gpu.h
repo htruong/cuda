@@ -3,19 +3,25 @@
 
 // Huan and Daniel's Needleman-Wunch's API
 
-void * needle_init(
-	const int gpu_num, // GPU number I should work on
+void * needle_prepare(
+	const int gpu_num,
 	unsigned int max_length_per_seq,
-	char *sequence_set1, // Pointer to sequence set 1
-	char *sequence_set2, // Pointer to sequence set 2
-	unsigned int *pos1, // Pointer arrays to set 1
-	unsigned int *pos2, // Pointer arrays to set 2
-	int *score_matrix, // Score matrix to store
-	unsigned int *pos_matrix // Position matrix to store back
-);
+	unsigned int * optimal_batch_size,
+	char * gpu_name
+);	
 
-void needle_align(void * needle_ctx, int num_pairs);
+void needle_allocate(
+    void *ctx,
+	char *sequence_set1,
+	char *sequence_set2,
+	unsigned int *pos1,
+	unsigned int *pos2,
+	int *score_matrix,
+	unsigned int *pos_matrix
+	);
 
-void needle_finalize(void * needle_ctx);
+void needle_align(void * ctx, int num_pairs);
+
+void needle_finalize(void * ctx);
 
 #endif	//__NEEDLE_H__
