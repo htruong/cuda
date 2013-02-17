@@ -14,16 +14,18 @@ DEPENDS2 = needle_cpu
 CFLAGS = $(EXTRAFLAGS) -O3 -Xptxas=-v -I$(INCLUDE) -L$(CUDA_LIB_DIR) 
 DEBUGFLAGS = -g $(CFLAGS) -DVERBOSE 
 # -DDUAL_BUFFERING -DUSE_PINNED_MEM
-
 DEBUG_PREFIX = debug_
 
 %.o: %.cu
 	$(CC) $(CFLAGS) -c $<
 
+%_d.o: %.cu
+	$(CC) $(DEBUGFLAGS) -c $<
+
 release: $(SRC) $(DEPENDS).o $(DEPENDS2).o
 	$(CC) $(CFLAGS) $(SRC) -o $(EXE) $(DEPENDS).o $(DEPENDS2).o
 
-debug: $(SRC) $(DEPENDS).o $(DEPENDS2).o
+debug: $(SRC) $(DEPENDS)_d.o $(DEPENDS2)_d.o
 	$(CC) $(DEBUGFLAGS) $(SRC) -o $(DEBUG_PREFIX)$(EXE) $(DEPENDS).o $(DEPENDS2).o
 
 enum: $(SRC)
