@@ -30,39 +30,47 @@ For example:
  * - Describe all the data structures listed below, along with their fields.
  */
 
+/* The parts marked with TODO DELETE can be safely removed, 
+	however I'm keeping it here 
+	because you did not instruct me to delete them */
+
+/* Type of a vertex aka node */
 typedef struct VERTEX_t
 {
-	int num;
-	int ei;
-	int eo;
-	int cyc;
-	int max_adj;
-	int next_v;
-	int proc;
+	int num; // Node number
+	int ei; // Edge in
+	int eo; // Edge out
+	int cyc; // Is the vertex in a cyclic drirected subgraph?
+	int max_adj; // Adjusted incoming cost
+	int next_v; // No need TODO DELETE
+	int proc; // Flag: Node is processed?
 }VERTEX_t;
 
+/* Type of an edge */
 typedef struct EDGE_t
 {
-	int vo;
-	int vi;
-	int w;
-	int adj_w;
-	int next_o;
-	int next_i;
-	int dead;
-	int rmvd;
-	int buried;
+	int vo; // Node out
+	int vi; // Node in
+	int w; // Weight of the edge
+	int adj_w; // Adjusted weight
+	int next_o; // Next node out
+	int next_i; // Next node in
+	int dead; // Flag: Dead? 
+	int rmvd; // Flag: Removed?
+	int buried; // Flag: Buried?
 }EDGE_t;
 
+/* Type of a directed graph */
 typedef struct DIGRAPH_t
 {
-	VERTEX_t *v;
-	EDGE_t *e;
-	int num_v;
-	int num_e;
-	int mst_sum;
+	VERTEX_t *v; // List of Nodes
+	EDGE_t *e; // List of Edges
+	int num_v; // Number of vertecies
+	int num_e; // Number of edges
+	int mst_sum; // MST sum
 }DIGRAPH_t;
 
+/* Type of a cyclic loop TODO DELETE */
 typedef struct CYCLEDATA_t
 {
 	unsigned int curr;
@@ -79,10 +87,38 @@ typedef struct CYCLEDATA_t
  * - Specify which functions run on the host and which on the device.
  */
 
+/* Wrapper HOST function to check if there is any error countered, if there is, then prints it out 
+ * @ce The return of the call executed.
+ * @returns void
+*/
 void cudaCheckError(cudaError_t ce);
+
+/* HOST function to add an edge to the directed graph 
+ * @d Pointer to directed graph
+ * @addr Last node just added
+ * @returns void
+*/
 void addEdge(DIGRAPH_t *d, int addr);
+
+/* DEVICE function to trim a spanning tree
+ * @e List of edges
+ * @v List of vertecies/nodes
+ * @returns void
+*/
 __global__ void trimSpanningTree(EDGE_t *e, VERTEX_t *v);
+
+/* DEVICE function to find if there is a cycle in the tree
+ * @e List of edges
+ * @v List of vertecies/nodes
+ * @num_v Number of vertecies
+ * @returns void
+*/
 __global__ void findCycles(EDGE_t *e, VERTEX_t *v, int num_v);
+
+/* HOST function to restore the spanning tree from the more abstracted one
+ * @d Pointer to directed graph
+ * @returns Number of cycles found
+*/
 int restoreSpanningTree(DIGRAPH_t *d);
 
 
