@@ -119,7 +119,7 @@ void memcpy_and_run (
 				batch_size, penalty);
 		#endif
 		
-		cudaDeviceSynchronize();
+		//cudaDeviceSynchronize();
 
 		ctx->total_kernel_time += gettime() - start_marker;
 		
