@@ -237,6 +237,8 @@ findCycles (EDGE_t * e, VERTEX_t * v, int num_v)
 			#ifdef BETTER_CYCLE_CHECK 
 			else if ((curr == id) && (i != 0)) {
 				cyc_found = 1;
+				// Mark imediatelly that I'm cyclic
+				v[id].cyc = 1;
 				break;
 			} else if ((v[curr].cyc)) {
 				cyc_found = 1;
