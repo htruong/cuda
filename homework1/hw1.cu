@@ -17,8 +17,9 @@
 /* All Huan's defs to improve the code will go here */
 #define FREEMEM_ULTILIZATION 0.75
 
-#define IMPR_BETTER_THREADS_PER_BLOCK
+//#define IMPR_BETTER_THREADS_PER_BLOCK
 #define BETTER_CYCLE_CHECK
+//#define USE_PINNED_MEM
 
 #ifndef IMPR_BETTER_THREADS_PER_BLOCK
 #define THREADS_PER_BLOCK 16
@@ -232,8 +233,16 @@ findCycles (EDGE_t * e, VERTEX_t * v, int num_v)
 				return;
 				#endif
 				break;
+			} 
+			#ifdef BETTER_CYCLE_CHECK 
+			else if ((curr == id) && (i != 0)) {
+				cyc_found = 1;
+				break;
+			} else if ((v[curr].cyc)) {
+				cyc_found = 1;
+				break;
 			}
-			
+			#endif
 			// Get next vertex
 			curr = e[v[curr].ei].vo;
 		}
@@ -521,7 +530,6 @@ void print_to_file(DIGRAPH_t * d, FILE * fout) {
 		for (int i = d->num_e - 1; i > -1; i--) {
 			if ((n == d->e[i].vo) && (!d->e[i].rmvd) && (!d->e[i].dead) && (!d->e[i].buried)) {
 				fprintf(fout, "%d\t%d\t%d\t\n", n, d->e[i].w, d->e[i].vi);
-				break;
 			}
 		}
 	}
@@ -646,9 +654,13 @@ main (int argc, char **argv)
 	time_total_start = time_start;
 	
 	// Allocate memory on the host for the array of edges and nodes needed for computation
+	#ifdef USE_PINNED_MEM
+	cudaMallocHost((void **) &v, d.num_v * sizeof (VERTEX_t));
+	cudaMallocHost((void **) &e, d.num_e * sizeof (EDGE_t));
+	#else	
 	v = (VERTEX_t *) malloc (d.num_v * sizeof (VERTEX_t));
 	e = (EDGE_t *) malloc (d.num_e * sizeof (EDGE_t));
-	
+	#endif
 	// Set the pointer of the edges and nodes to the one that we just allocated
 	d.v = v;
 	d.e = e;
@@ -711,7 +723,6 @@ main (int argc, char **argv)
 		cudaMemcpyDeviceToHost));
 	cudaDeviceSynchronize();
 	time_memcpy_bck = gettime() - time_start;
-	
 	
 	fnd_c = 1;
 	interations_count = 0;
@@ -784,8 +795,13 @@ main (int argc, char **argv)
 		abort();
 	}
 	
+	#ifdef USE_PINNED_MEM
+	cudaFreeHost(&e);
+	cudaFreeHost(&v);
+	#else
 	free (e);
 	free (v);
+	#endif
 	cudaCheckError (cudaFree (e_gpu));
 	cudaCheckError (cudaFree (v_gpu));
 	return (0);
