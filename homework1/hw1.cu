@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <cuda.h>
+#include <sys/time.h>
 
 #define NO_EDGE_FND -1
 #define LIST_END -1
@@ -12,18 +13,24 @@
 #define CUDA_DEVICE 0
 #endif
 
-#define THREADS_PER_BLOCK 16
 
 /* All Huan's defs to improve the code will go here */
 #define FREEMEM_ULTILIZATION 0.75
 
+#define IMPR_BETTER_THREADS_PER_BLOCK
+#define BETTER_CYCLE_CHECK
+
+#ifndef IMPR_BETTER_THREADS_PER_BLOCK
+#define THREADS_PER_BLOCK 16
+#else
+#define THREADS_PER_BLOCK 256
+#endif
 /* ADD_COMMENT
  * - Describe all the data structures listed below, along with their fields.
  */
 
-/* The parts marked with TODO DELETE can be safely removed, 
- *	however I'm keeping it here 
- *	because you did not instruct me to delete them */
+/* The parts marked with TODO DELETE can be removed, 
+ *	However I'm keeping it here as you did not instruct me to delete them */
 
 /* Type of a vertex aka node */
 typedef struct VERTEX_t
@@ -31,9 +38,9 @@ typedef struct VERTEX_t
 	int num;			// Node number
 	int ei;				// Edge in
 	int eo;				// Edge out
-	int cyc;			// Is the vertex in a cyclic drirected subgraph?
+	int cyc;			// Is the node in a cyclic drirected subgraph?
 	int max_adj;		// Adjusted incoming cost
-	int next_v;			// No need TODO DELETE
+	int next_v;			// If it's going to be visited the next time
 	int proc;			// Flag: Node is processed?
 } VERTEX_t;
 
@@ -61,7 +68,7 @@ typedef struct DIGRAPH_t
 	int mst_sum;			// MST sum
 } DIGRAPH_t;
 
-/* Type of a cyclic loop TODO DELETE */
+/* Type of a cyclic loop? TODO DELETE */
 typedef struct CYCLEDATA_t
 {
 	unsigned int curr;
@@ -112,6 +119,16 @@ __global__ void findCycles (EDGE_t * e, VERTEX_t * v, int num_v);
  */
 int restoreSpanningTree (DIGRAPH_t * d);
 
+/* HOST function to check if the spanning tree is a legitimate one
+ * This function does two things:
+ * 	- It verifies that all nodes can be visited from the root node
+ *  - It verifies that the graph is not cyclic
+ * It will also calculate the weight of the MST while checking.
+ * NOTICE it will not verify if the solution is the optimal one
+ * @d Pointer to directed graph
+ * @returns 	true if pass
+ */
+bool verify_st(DIGRAPH_t * d);
 
 inline void
 cudaCheckError (cudaError_t ce)
@@ -122,6 +139,17 @@ cudaCheckError (cudaError_t ce)
 		exit (1);
 	}
 }
+
+/* HOST function to get the time 
+ * @returns the current timestamp
+ * source: cuda needle gpu code <becchim>
+ * */
+inline double gettime() {
+	struct timeval t;
+	gettimeofday(&t,NULL);
+	return t.tv_sec+t.tv_usec*1e-6;
+}
+
 
 __global__ void
 trimSpanningTree (EDGE_t * e, VERTEX_t * v, int num_v)
@@ -175,6 +203,7 @@ trimSpanningTree (EDGE_t * e, VERTEX_t * v, int num_v)
 			v[id].ei = max_addr;
 		}
 	}
+	
 }
 
 __global__ void
@@ -195,10 +224,13 @@ findCycles (EDGE_t * e, VERTEX_t * v, int num_v)
 		// The edges can be backtracked (# of vertices) times until
 		// it is known whether the initial vertex is connected to the root
 		for (i = 0; i < num_v; i++) {
-			// Check if root found
 			if (curr == 0) {
 				// Mark cycle as zero and break
 				cyc_found = 0;
+				#ifdef BETTER_CYCLE_CHECK
+				v[id].cyc = 0;
+				return;
+				#endif
 				break;
 			}
 			
@@ -211,17 +243,16 @@ findCycles (EDGE_t * e, VERTEX_t * v, int num_v)
 		
 		// If the root was not found within (# of vertices) backtrackings,
 		// then a cycle has been found
+		#ifndef BETTER_CYCLE_CHECK
 		if (cyc_found == 1) {
-			
 			max = 0;
-			
+		#endif	
 			// If the initial vertex is found at the start or while scanning for the largest vertex in the cycle
 			// than it belongs to the actual cycle and is not a branch off of it
 			if (start == id)
 			{
 				self_fnd = 1;
 			}
-			
 			
 			// Scan for the max vertex number in the cycle. This is how we will know what cycle a vertex belongs to
 			// later on
@@ -251,9 +282,11 @@ findCycles (EDGE_t * e, VERTEX_t * v, int num_v)
 			else {
 				v[id].cyc = 0;
 			}
+		#ifndef BETTER_CYCLE_CHECK
 		} else {
 			v[id].cyc = 0;
 		}
+		#endif
 	}
 }
 	
@@ -264,11 +297,17 @@ addEdge (DIGRAPH_t * d, int addr)
 	int next;
 	
 	// Insert edge at head of the outgoing list
+	// What this does:
+	// - It gets the edge id (addr), get the edge out of the node
+	// - It assigns the edge out of the node to the edge id
+	// - Then it assigns the next_o of the edge to be 
+	//   the old edge out of the node (? - TOINVESTIGATE)
 	next = d->v[d->e[addr].vo].eo;
 	d->v[d->e[addr].vo].eo = addr;
 	d->e[addr].next_o = next;
 	
 	// Insert edge at the head of the incoming list
+	// Same here
 	next = d->v[d->e[addr].vi].ei;
 	d->v[d->e[addr].vi].ei = addr;
 	d->e[addr].next_i = next;
@@ -415,6 +454,79 @@ restoreSpanningTree (DIGRAPH_t * d)
 	
 }
 
+bool 
+verify_st(DIGRAPH_t * d) {
+	// First try to visit all nodes to mark them unprocessed/unvisited
+	for (int i = 0; i < d->num_v; i++) {
+		d->v[i].proc = 0;
+		d->v[i].next_v = 0;
+	}
+	
+	// At the same time let's also try to update the mst sum
+	d->mst_sum = 0;
+	
+	int next_v_count = 0;
+	// Now try to start from the start node
+	d->v[0].next_v = 1;
+	next_v_count++;
+	
+	while (next_v_count > 0) {
+		// Walk through all nodes, visit all nodes that are marked for visiting
+		for (int i = 0; i < d->num_v; i++) {
+			// if it's marked for visited...
+			if (d->v[i].next_v == 1) {
+				//fprintf(stderr, "Visiting node %d ->", i);
+				// but not visited yet, then visit it
+				if (d->v[i].proc == 0) {
+					d->v[i].proc = 1;
+					// find all the nodes that this node could visit
+					for (int j = 0; j < d->num_e; j++) {
+						if ((d->e[j].vo == i) && (!d->e[j].rmvd) && (!d->e[j].dead) && (!d->e[j].buried)) {
+							//fprintf(stderr, "%d, ", d->e[j].vi);
+							// Mark it for next visit
+							d->v[d->e[j].vi].next_v = 1;
+							d->mst_sum += d->e[j].w;
+							next_v_count ++;
+						}
+					}
+					//fprintf(stderr, "\n", 0);
+				} else {
+					// This node is already visited and is asked to visit again
+					fprintf(stderr, "OOOPS: Node %d is already visited *Cyclic!!!*\n", i);
+					return false;
+				}
+			d->v[i].next_v = 0;
+			next_v_count --;
+			break;
+			}
+		}
+	}
+	
+	// At this point we're sure we have visited all the nodes that we could visit
+	// And there are no cyclic nodes found
+	// Make sure we have visited every node
+	for (int i = 0; i < d->num_v; i++) {
+		if (!d->v[i].proc) {
+			fprintf(stderr, "OOOPS: Node %d is unreachable!\n", i);
+			return false;
+		}
+	}
+	
+	// if we could reach here the graph should be fine
+	return true;
+}
+
+void print_to_file(DIGRAPH_t * d, FILE * fout) {
+	for (int n = 0; n < d->num_v; n++) {
+		for (int i = d->num_e - 1; i > -1; i--) {
+			if ((n == d->e[i].vo) && (!d->e[i].rmvd) && (!d->e[i].dead) && (!d->e[i].buried)) {
+				fprintf(fout, "%d\t%d\t%d\t\n", n, d->e[i].w, d->e[i].vi);
+				break;
+			}
+		}
+	}
+}
+
 int
 main (int argc, char **argv)
 {
@@ -424,10 +536,11 @@ main (int argc, char **argv)
 		*/
 	
 	// HOST Cursor for the file handles, ingraph and outgraph
-	FILE 	*fin, *fout; 
+	FILE 	* fin, * fout; 
 	
-	// HOST temp variables: i, fnd_c - cycles found
+	// HOST temp variables: i, fnd_c - cycles found, interations_count
 	int 	i, fnd_c; 
+	unsigned long interations_count = 0;
 	
 	// HOST directed graph
 	DIGRAPH_t d; 
@@ -437,6 +550,10 @@ main (int argc, char **argv)
 	
 	// nodes on DEVICE and HOST respectively
 	VERTEX_t *v_gpu, *v; 
+	
+	// Timing variables
+	double time_start, time_init, time_memcpy_fwd, time_memcpy_bck, 
+		time_trim, time_find_cyc, time_restore, time_total, time_total_start;
 	
 	if (argc < 2) {
 		fprintf (stderr,
@@ -454,20 +571,19 @@ main (int argc, char **argv)
 	}
 	
 	// Try to determine if the last param is the output to file directive
-	// if not, then we can try to output to stdout
+	// if not, then we can try to output to stderr
 	if (strncmp(argv[argc - 2], "-o", 16) == 0) {
 		fout = fopen(argv[argc - 1], "w");
 	} else {
 		fprintf (stderr, "No [-o outputfile] parameter specified.\n"
-		"Outputting to standard output\n");
-		fout = stdout;
+		"Outputting to standard error output\n");
+		fout = stderr;
 	}
 	
 	if (fout == NULL) {
 		fprintf (stderr, "Error: Could not open output file");
 		abort();
 	}
-	
 	
 	fscanf (fin, "%u", &d.num_v);
 	fscanf (fin, "%u", &d.num_e);
@@ -514,11 +630,20 @@ main (int argc, char **argv)
 			"FATAL: too much memory required on device [needed %d bytes]\n",
 		  mem_required);
 		abort();
+	} else {
+	fprintf(stderr, 
+			"Allocating %d bytes for nodes and %d bytes for edges\n",
+		  d.num_v * sizeof (VERTEX_t), d.num_e * sizeof (EDGE_t));
 	}
 	
 	/* ADD_COMMENT
 		* - instructions below (please add a comment at each blank line)
 		*/
+	
+	
+	time_start = gettime();
+	
+	time_total_start = time_start;
 	
 	// Allocate memory on the host for the array of edges and nodes needed for computation
 	v = (VERTEX_t *) malloc (d.num_v * sizeof (VERTEX_t));
@@ -555,6 +680,9 @@ main (int argc, char **argv)
 	cudaCheckError (cudaMalloc ((void **) &e_gpu, d.num_e * sizeof (EDGE_t)));
 	cudaCheckError (cudaMalloc ((void **) &v_gpu, d.num_v * sizeof (VERTEX_t)));
 	
+	time_init = gettime() - time_start;
+	
+	time_start = gettime();
 	// Memcpy from HOST->DEV
 	cudaCheckError (cudaMemcpy
 	((void *) e_gpu, d.e, d.num_e * sizeof (EDGE_t),
@@ -562,12 +690,18 @@ main (int argc, char **argv)
 	cudaCheckError (cudaMemcpy
 	((void *) v_gpu, d.v, d.num_v * sizeof (VERTEX_t),
 		cudaMemcpyHostToDevice));
+	cudaDeviceSynchronize();
+	time_memcpy_fwd = gettime() - time_start;
 	
+	time_start = gettime();
 	// Do initial trimming
 	trimSpanningTree <<< blocks_per_grid, threads_per_block >>> (e_gpu, v_gpu,
 																	d.num_v);
 	cudaCheckError (cudaGetLastError ());
+	cudaDeviceSynchronize();
+	time_trim = gettime() - time_start;
 	
+	time_start = gettime();
 	// Copy the result back
 	cudaCheckError (cudaMemcpy
 	((void *) d.e, (void *) e_gpu, d.num_e * sizeof (EDGE_t),
@@ -575,34 +709,63 @@ main (int argc, char **argv)
 	cudaCheckError (cudaMemcpy
 	((void *) d.v, (void *) v_gpu, d.num_v * sizeof (VERTEX_t),
 		cudaMemcpyDeviceToHost));
+	cudaDeviceSynchronize();
+	time_memcpy_bck = gettime() - time_start;
+	
 	
 	fnd_c = 1;
+	interations_count = 0;
+	time_find_cyc = 0;
+	time_restore = 0;
 	
 	// Loop while we're still have cyclic sub-graphs
-	while (fnd_c > 0)
-	{
+	while (fnd_c > 0) {
+		
+		time_start = gettime();
 		cudaCheckError (cudaMemcpy
 		((void *) e_gpu, d.e, d.num_e * sizeof (EDGE_t),
 			cudaMemcpyHostToDevice));
 		cudaCheckError (cudaMemcpy
 		((void *) v_gpu, d.v, d.num_v * sizeof (VERTEX_t),
 			cudaMemcpyHostToDevice));
+		cudaDeviceSynchronize();
+		time_memcpy_fwd += gettime() - time_start;
 		
+		time_start = gettime();
 		// Contract nodes and recalculate weights
 		findCycles <<< blocks_per_grid, threads_per_block >>> (e_gpu, v_gpu,
 																d.num_v);
 		cudaCheckError (cudaGetLastError ());
-		
+		cudaDeviceSynchronize();
+		time_find_cyc += gettime() - time_start;
+	
+		time_start = gettime();
 		cudaCheckError (cudaMemcpy
 		((void *) d.e, (void *) e_gpu,
 			d.num_e * sizeof (EDGE_t), cudaMemcpyDeviceToHost));
 		cudaCheckError (cudaMemcpy
 		((void *) d.v, (void *) v_gpu,
 			d.num_v * sizeof (VERTEX_t), cudaMemcpyDeviceToHost));
+		cudaDeviceSynchronize();
+		time_memcpy_bck += gettime() - time_start;
 		
 		// Uncontract nodes and recalculate weights
+		time_start = gettime();
 		fnd_c = restoreSpanningTree (&d);
+		time_restore += gettime() - time_start;
+		interations_count ++;
 	}
+	
+	// Now print timing information
+	time_total = gettime() - time_total_start;
+	printf("TIMINGPROFILE, %d, %d, %f, %d, %f, %f, %f, %f, %f, %f\n", 
+		d.num_v, d.num_e,
+		time_total,
+		interations_count,
+		time_init, 
+		time_memcpy_fwd, time_memcpy_bck,
+		time_trim, time_find_cyc, time_restore
+	);
 	
 	/* ADD_CODE
 		* - Check whether the found MST is indeed a directed spanning tree. You can implement this in a separate function and invoke it here.
@@ -610,7 +773,16 @@ main (int argc, char **argv)
 		* - Print to stdout the weight of the MST, and the number of iterations needed to find it.
 		*/
 	
-	
+	if (verify_st(&d)) {
+		printf("Weight of spanning tree: %d.\n"
+		"Found after %d iterations.\n", d.mst_sum, interations_count);
+		print_to_file(&d, fout);
+	} else {
+		fprintf(stderr, 
+			"FATAL: The tree we found has got errors.\n",
+		  d.mst_sum);
+		abort();
+	}
 	
 	free (e);
 	free (v);
@@ -618,4 +790,3 @@ main (int argc, char **argv)
 	cudaCheckError (cudaFree (v_gpu));
 	return (0);
 }
-	
