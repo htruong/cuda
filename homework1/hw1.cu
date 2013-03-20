@@ -3,6 +3,10 @@
 #include <cuda.h>
 #include <sys/time.h>
 
+/* HOMEWORK 1 */
+/* Huan Truong <huantruong@mail.missouri.edu> */
+/* Based on Becchi M.'s code */
+
 #define NO_EDGE_FND -1
 #define LIST_END -1
 
@@ -17,9 +21,9 @@
 /* All Huan's defs to improve the code will go here */
 #define FREEMEM_ULTILIZATION 0.75
 
-//#define IMPR_BETTER_THREADS_PER_BLOCK
+#define IMPR_BETTER_THREADS_PER_BLOCK
 #define BETTER_CYCLE_CHECK
-//#define USE_PINNED_MEM
+//#define USE_PINNED_MEM // Do not activate this... it's pretty bad.
 
 #ifndef IMPR_BETTER_THREADS_PER_BLOCK
 #define THREADS_PER_BLOCK 16
@@ -99,14 +103,22 @@ void cudaCheckError (cudaError_t ce);
  */
 void addEdge (DIGRAPH_t * d, int addr);
 
-/* DEVICE function to trim a spanning tree
+/* DEVICE The function does initial trimming, 
+ * the first part of the algorithm as set forth by Chu-Liu/Edmonds. 
+ * It “discards” (by setting the removed bit) all the edges that 
+ * are not having the max weight to not bother about them as much anymore.
  * @e List of edges
  * @v List of vertecies/nodes
  * @returns void
  */
 __global__ void trimSpanningTree (EDGE_t * e, VERTEX_t * v);
 
-/* DEVICE function to find if there is a cycle in the tree
+/* DEVICE function, looks in the graph to see if there are any cycles.
+ * The function works on each node, trying to trace back to see if 
+ * it could ever find the root node for each.
+ * It knows the maximum number of steps tracing back is only as many as 
+ * there are nodes, so that's how it knows how to give up if it 
+ * gets to a cyclic loop.
  * @e List of edges
  * @v List of vertecies/nodes
  * @num_v Number of vertecies
@@ -131,7 +143,23 @@ int restoreSpanningTree (DIGRAPH_t * d);
  */
 bool verify_st(DIGRAPH_t * d);
 
-inline void
+
+/* HOST function to get the time 
+ * @returns the current timestamp
+ * source: cuda needle gpu code <becchim>
+ * */
+double gettime();
+
+
+double 
+gettime() {
+	struct timeval t;
+	gettimeofday(&t,NULL);
+	return t.tv_sec+t.tv_usec*1e-6;
+}
+
+
+void
 cudaCheckError (cudaError_t ce)
 {
 	if (ce != cudaSuccess)
@@ -140,17 +168,6 @@ cudaCheckError (cudaError_t ce)
 		exit (1);
 	}
 }
-
-/* HOST function to get the time 
- * @returns the current timestamp
- * source: cuda needle gpu code <becchim>
- * */
-inline double gettime() {
-	struct timeval t;
-	gettimeofday(&t,NULL);
-	return t.tv_sec+t.tv_usec*1e-6;
-}
-
 
 __global__ void
 trimSpanningTree (EDGE_t * e, VERTEX_t * v, int num_v)
@@ -240,9 +257,9 @@ findCycles (EDGE_t * e, VERTEX_t * v, int num_v)
 				// for other people to not waste time
 				v[id].cyc = 1; // It doesn't need to be correct at this point.
 				break;
-			} else if ((v[curr].cyc != 0)) {
+			} /*else if ((v[curr].cyc != 0)) {
 				break;
-			}
+			}*/
 			#endif
 			// Get next vertex
 			curr = e[v[curr].ei].vo;
